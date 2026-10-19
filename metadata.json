@@ -1,0 +1,6 @@
+{
+  "name": "Family Wealth & Debt Vault (Clear AED)",
+  "description": "Private end-to-end encrypted family financial operating system, loan & debt tracker, mathematical audit reconciliation engine, and AI financial advisor.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

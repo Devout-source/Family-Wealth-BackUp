@@ -1,0 +1,107 @@
+{
+  "entities": {
+    "FamilyVault": {
+      "title": "FamilyVault",
+      "description": "Family Wealth and Debt Vault state containing loans, incomes, bills, cards, payments and members.",
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number",
+          "description": "Schema version number"
+        },
+        "currency": {
+          "type": "string",
+          "description": "Vault primary currency code (AED)",
+          "enum": ["AED"]
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of the last vault mutation"
+        },
+        "updatedBy": {
+          "type": "string",
+          "description": "Name or identifier of the member or auth user who applied the update"
+        },
+        "members": {
+          "type": "array",
+          "description": "List of authorized household members"
+        },
+        "loans": {
+          "type": "array",
+          "description": "Active and settled personal loans with amortization schedules"
+        },
+        "installments": {
+          "type": "array",
+          "description": "Monthly loan installment tracking items"
+        },
+        "incomes": {
+          "type": "array",
+          "description": "Monthly earned household income items"
+        },
+        "essentials": {
+          "type": "array",
+          "description": "Essential household bills and arrears"
+        },
+        "payments": {
+          "type": "array",
+          "description": "Logged payment charges and receipt transactions"
+        },
+        "creditCards": {
+          "type": "array",
+          "description": "Family credit card accounts and statement balances"
+        },
+        "otherSpending": {
+          "type": "array",
+          "description": "Variable household expenditure records"
+        },
+        "moneyLent": {
+          "type": "array",
+          "description": "Monies lent to third-parties to recover"
+        },
+        "savingsGoals": {
+          "type": "array",
+          "description": "Monthly emergency fund and savings targets"
+        }
+      },
+      "required": ["version", "currency", "updatedAt"]
+    },
+    "FamilyActivityLog": {
+      "title": "FamilyActivityLog",
+      "description": "Audit and sync log item for vault modifications",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique log item ID"
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "ISO timestamp of the action"
+        },
+        "memberName": {
+          "type": "string",
+          "description": "Name of the family member executing the action"
+        },
+        "action": {
+          "type": "string",
+          "description": "Type of financial mutation executed"
+        },
+        "details": {
+          "type": "string",
+          "description": "Human-readable description of the change"
+        }
+      },
+      "required": ["id", "timestamp", "memberName", "action", "details"]
+    }
+  },
+  "firestore": {
+    "/vaults/{vaultId}": {
+      "schema": "FamilyVault",
+      "description": "Encrypted and structured family financial vault document"
+    },
+    "/vaults/{vaultId}/logs/{logId}": {
+      "schema": "FamilyActivityLog",
+      "description": "Audit trail log records for family vault mutations"
+    }
+  }
+}

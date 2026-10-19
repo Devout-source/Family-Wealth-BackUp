@@ -1,0 +1,102 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        (request.auth.token.email == 'mestiyage.don.2008@gmail.com' ||
+         request.auth.token.email == 'bluephoenixgamer123@gmail.com') &&
+        request.auth.token.email_verified == true;
+    }
+
+    function isValidVault(data) {
+      return data.version is number &&
+        data.currency == 'AED' &&
+        data.updatedAt is string && data.updatedAt.size() <= 64 &&
+        (!('updatedBy' in data) || (data.updatedBy is string && data.updatedBy.size() <= 128)) &&
+        (!('members' in data) || (data.members is list && data.members.size() <= 50)) &&
+        (!('loans' in data) || (data.loans is list && data.loans.size() <= 100)) &&
+        (!('installments' in data) || (data.installments is list && data.installments.size() <= 500)) &&
+        (!('incomes' in data) || (data.incomes is list && data.incomes.size() <= 200)) &&
+        (!('essentials' in data) || (data.essentials is list && data.essentials.size() <= 200)) &&
+        (!('payments' in data) || (data.payments is list && data.payments.size() <= 1000)) &&
+        (!('creditCards' in data) || (data.creditCards is list && data.creditCards.size() <= 50)) &&
+        (!('otherSpending' in data) || (data.otherSpending is list && data.otherSpending.size() <= 1000)) &&
+        (!('moneyLent' in data) || (data.moneyLent is list && data.moneyLent.size() <= 100)) &&
+        (!('savingsGoals' in data) || (data.savingsGoals is list && data.savingsGoals.size() <= 100));
+    }
+
+    function isValidLog(data) {
+      return data.id is string && data.id.size() <= 128 &&
+        data.timestamp is string && data.timestamp.size() <= 64 &&
+        data.memberName is string && data.memberName.size() <= 128 &&
+        data.action is string && data.action.size() <= 64 &&
+        data.details is string && data.details.size() <= 1000;
+    }
+
+    match /vaults/{vaultId} {
+      allow get: if isSignedIn() && isValidId(vaultId);
+      allow list: if false;
+
+      allow create: if isSignedIn() &&
+        isValidId(vaultId) &&
+        isValidVault(incoming()) &&
+        incoming().keys().hasAll(['version', 'currency', 'updatedAt']) &&
+        incoming().keys().hasOnly([
+          'version', 'currency', 'updatedAt', 'updatedBy',
+          'members', 'loans', 'installments', 'incomes',
+          'essentials', 'payments', 'creditCards', 'otherSpending',
+          'moneyLent', 'savingsGoals'
+        ]);
+
+      allow update: if isSignedIn() &&
+        isValidId(vaultId) &&
+        isValidVault(incoming()) &&
+        (incoming().diff(existing()).affectedKeys().hasOnly([
+          'version', 'currency', 'updatedAt', 'updatedBy',
+          'members', 'loans', 'installments', 'incomes',
+          'essentials', 'payments', 'creditCards', 'otherSpending',
+          'moneyLent', 'savingsGoals'
+        ]));
+
+      allow delete: if isAdmin() && isValidId(vaultId);
+
+      match /logs/{logId} {
+        allow read: if isSignedIn() && isValidId(vaultId) && isValidId(logId);
+        allow create: if isSignedIn() &&
+          isValidId(vaultId) &&
+          isValidId(logId) &&
+          isValidLog(incoming()) &&
+          incoming().keys().hasAll(['id', 'timestamp', 'memberName', 'action', 'details']) &&
+          incoming().keys().hasOnly(['id', 'timestamp', 'memberName', 'action', 'details']);
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // Connection test document
+    match /test/connection {
+      allow read: if isSignedIn();
+    }
+  }
+}
