@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Download,
   Zap,
@@ -15,10 +15,29 @@ import {
   Banknote,
   Clock,
   Coins,
+  SlidersHorizontal,
+  Eye,
+  EyeOff,
+  RotateCcw,
+  Gauge,
+  Info,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { RepaymentInstallment, LoanRecord, IncomeEntry, EssentialBill } from '../types.ts';
 import { exportInstallmentsCSV } from '../utils/exportTools.ts';
-import { calculateDebtAvalanche, LoanAllocationStep } from '../utils/debtAvalanche.ts';
+import {
+  calculateDebtAvalanche,
+  LoanAllocationStep,
+  SafetyBufferConfig,
+  PacingCapConfig,
+  DEFAULT_SAFETY_BUFFER,
+  DEFAULT_PACING_CAP,
+} from '../utils/debtAvalanche.ts';
+
+const BUFFER_STORAGE_KEY = 'family_vault_living_buffer_v1';
+const PACING_STORAGE_KEY = 'family_vault_pacing_cap_v1';
+const WHAT_IF_STORAGE_KEY = 'family_vault_what_if_excluded_v1';
 
 interface RepaymentPlanViewProps {
   installments: RepaymentInstallment[];
@@ -45,16 +64,84 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>('ALL');
   const [viewTab, setViewTab] = useState<'avalanche' | 'installments'>('avalanche');
 
+  // 1. Safety Buffer Setting (Daily Food & Survival Cash)
+  const [bufferConfig, setBufferConfig] = useState<SafetyBufferConfig>(() => {
+    try {
+      const saved = localStorage.getItem(BUFFER_STORAGE_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return DEFAULT_SAFETY_BUFFER;
+  });
+
+  // 2. Sustainable Monthly Pacing Caps
+  const [pacingCapConfig, setPacingCapConfig] = useState<PacingCapConfig>(() => {
+    try {
+      const saved = localStorage.getItem(PACING_STORAGE_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return DEFAULT_PACING_CAP;
+  });
+
+  // 3. "What-If" Simulation Excluded Loan IDs (Simulate Closed or Paused Loans)
+  const [excludedLoanIds, setExcludedLoanIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(WHAT_IF_STORAGE_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [];
+  });
+
+  // Controls drawer visibility
+  const [isControlsExpanded, setIsControlsExpanded] = useState<boolean>(true);
+
   // Quick Payment Execution Modal state
   const [paymentTargetLoan, setPaymentTargetLoan] = useState<LoanAllocationStep | null>(null);
   const [execPaymentAmount, setExecPaymentAmount] = useState<number>(0);
   const [execPaymentMethod, setExecPaymentMethod] = useState<string>('Bank Transfer');
   const [execPaymentNotes, setExecPaymentNotes] = useState<string>('');
 
-  // 1. Calculate smart Debt Avalanche payoff plan linking Income Log, Essentials, and Loans
+  // Persist configurations to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(BUFFER_STORAGE_KEY, JSON.stringify(bufferConfig));
+    } catch {}
+  }, [bufferConfig]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PACING_STORAGE_KEY, JSON.stringify(pacingCapConfig));
+    } catch {}
+  }, [pacingCapConfig]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(WHAT_IF_STORAGE_KEY, JSON.stringify(excludedLoanIds));
+    } catch {}
+  }, [excludedLoanIds]);
+
+  // Execute smart calculation linking Income, Essentials, and Loans with Safety Buffer, Pacing & What-If
   const plan = useMemo(() => {
-    return calculateDebtAvalanche(incomes, essentials, loans, currentMonth);
-  }, [incomes, essentials, loans, currentMonth]);
+    return calculateDebtAvalanche(incomes, essentials, loans, currentMonth, {
+      bufferConfig,
+      pacingCapConfig,
+      excludedLoanIds,
+    });
+  }, [incomes, essentials, loans, currentMonth, bufferConfig, pacingCapConfig, excludedLoanIds]);
+
+  // Toggle "What-If" simulated closure on/off for a loan
+  const toggleWhatIfLoan = (loanId: string) => {
+    setExcludedLoanIds((prev) => {
+      if (prev.includes(loanId)) {
+        return prev.filter((id) => id !== loanId);
+      } else {
+        return [...prev, loanId];
+      }
+    });
+  };
+
+  const handleResetWhatIf = () => {
+    setExcludedLoanIds([]);
+  };
 
   // Installments list filtering
   const filteredInstallments = useMemo(() => {
@@ -90,7 +177,7 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
       execPaymentNotes
     );
 
-    // Also if there is a pending installment for this loan in the current month, mark it paid
+    // Also mark matching installment as paid if one exists for current month
     const matchingInst = installments.find(
       (inst) => inst.loanId === paymentTargetLoan.loanId && inst.status !== 'Paid'
     );
@@ -116,8 +203,8 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
             </h1>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Automated payoff schedule calculating net disposable funds from <strong>Income Log</strong> and{' '}
-            <strong>Essentials & Arrears</strong> to attack highest-interest loans first.
+            Automated payoff schedule calculating net disposable funds with <strong>Living Safety Buffer</strong>,{' '}
+            <strong>Sustainable Pacing</strong>, and <strong>What-If Simulation</strong>.
           </p>
         </div>
 
@@ -158,6 +245,302 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* FEATURE 1 & 2: CONTROLS PANEL FOR SAFETY BUFFER & MONTHLY PACING */}
+      {viewTab === 'avalanche' && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden transition-all">
+          <div
+            onClick={() => setIsControlsExpanded(!isControlsExpanded)}
+            className="p-4 bg-slate-50 dark:bg-slate-950/60 flex items-center justify-between cursor-pointer border-b border-slate-200 dark:border-slate-800"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center border border-emerald-500/20">
+                <SlidersHorizontal className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>Payoff Safety Buffer & Pacing Settings</span>
+                  <span className="text-[10px] font-normal px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                    Buffer: {bufferConfig.mode === 'percentage' ? `${bufferConfig.percentage}%` : `AED ${bufferConfig.fixedAmount}`}
+                    {pacingCapConfig.enabled ? ` • Paced: AED ${pacingCapConfig.maxPerLoanAmount}/mo` : ' • Uncapped'}
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Protect cash for daily food, groceries and survival before accelerating debt payments.
+                </p>
+              </div>
+            </div>
+
+            <button className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1">
+              {isControlsExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
+          </div>
+
+          {isControlsExpanded && (
+            <div className="p-4 sm:p-5 grid grid-cols-1 md:grid-cols-2 gap-5">
+              {/* Feature 1: Living Safety Buffer Config */}
+              <div className="space-y-3 p-4 rounded-xl bg-slate-50/70 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800/80">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-500" />
+                    <span className="text-xs font-bold text-slate-900 dark:text-white">
+                      1. Living Safety Buffer (Food & Daily Survival)
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                    Reserving AED {plan.livingBufferAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Reserves cash from net income strictly for groceries, food, and daily needs before debt allocation.
+                </p>
+
+                {/* Mode Selector */}
+                <div className="flex items-center gap-2">
+                  <div className="grid grid-cols-2 gap-1 p-1 bg-slate-200/80 dark:bg-slate-800 rounded-lg text-xs font-medium w-48">
+                    <button
+                      type="button"
+                      onClick={() => setBufferConfig({ ...bufferConfig, mode: 'percentage' })}
+                      className={`py-1 text-center rounded-md transition-all cursor-pointer ${
+                        bufferConfig.mode === 'percentage'
+                          ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold shadow-2xs'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      Percentage (%)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBufferConfig({ ...bufferConfig, mode: 'fixed' })}
+                      className={`py-1 text-center rounded-md transition-all cursor-pointer ${
+                        bufferConfig.mode === 'fixed'
+                          ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold shadow-2xs'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      Fixed AED
+                    </button>
+                  </div>
+
+                  {/* Percentage Presets */}
+                  {bufferConfig.mode === 'percentage' ? (
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                      {[15, 25, 35, 50].map((pct) => (
+                        <button
+                          key={pct}
+                          type="button"
+                          onClick={() => setBufferConfig({ ...bufferConfig, percentage: pct })}
+                          className={`px-2.5 py-1 rounded-md border text-xs font-semibold transition-all cursor-pointer ${
+                            bufferConfig.percentage === pct
+                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                              : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:border-slate-400'
+                          }`}
+                        >
+                          {pct}% {pct === 25 ? '★' : ''}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                      {[1500, 2500, 4000].map((amt) => (
+                        <button
+                          key={amt}
+                          type="button"
+                          onClick={() => setBufferConfig({ ...bufferConfig, fixedAmount: amt })}
+                          className={`px-2.5 py-1 rounded-md border text-xs font-semibold transition-all cursor-pointer ${
+                            bufferConfig.fixedAmount === amt
+                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                              : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:border-slate-400'
+                          }`}
+                        >
+                          {amt} AED
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Custom Input */}
+                <div className="flex items-center gap-3 pt-1">
+                  {bufferConfig.mode === 'percentage' ? (
+                    <div className="flex items-center gap-2">
+                      <label className="text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                        Custom %:
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={bufferConfig.percentage}
+                        onChange={(e) =>
+                          setBufferConfig({
+                            ...bufferConfig,
+                            percentage: Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)),
+                          })
+                        }
+                        className="w-20 px-2.5 py-1 text-xs font-mono font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
+                      />
+                      <span className="text-xs text-slate-400">%</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <label className="text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                        Custom AED:
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="100"
+                        value={bufferConfig.fixedAmount}
+                        onChange={(e) =>
+                          setBufferConfig({
+                            ...bufferConfig,
+                            fixedAmount: Math.max(0, parseFloat(e.target.value) || 0),
+                          })
+                        }
+                        className="w-28 px-2.5 py-1 text-xs font-mono font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
+                      />
+                      <span className="text-xs text-slate-400">AED</span>
+                    </div>
+                  )}
+                  <span className="text-[11px] text-slate-500 italic">
+                    Safe cash retained: AED {plan.livingBufferAmount.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Feature 2: Sustainable Monthly Pacing Caps Config */}
+              <div className="space-y-3 p-4 rounded-xl bg-slate-50/70 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800/80">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Gauge className="w-4 h-4 text-indigo-500" />
+                    <span className="text-xs font-bold text-slate-900 dark:text-white">
+                      2. Sustainable Monthly Pacing Caps
+                    </span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={pacingCapConfig.enabled}
+                      onChange={(e) =>
+                        setPacingCapConfig({ ...pacingCapConfig, enabled: e.target.checked })
+                      }
+                      className="sr-only peer"
+                    />
+                    <div className="w-8 h-4 bg-slate-300 peer-focus:outline-hidden rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-600" />
+                    <span className="ml-2 text-[11px] font-semibold text-slate-700 dark:text-slate-300">
+                      {pacingCapConfig.enabled ? 'Enabled' : 'Disabled'}
+                    </span>
+                  </label>
+                </div>
+
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Caps maximum repayment allocated to any single loan in one month, distributing payments sustainably over time.
+                </p>
+
+                {pacingCapConfig.enabled ? (
+                  <div className="space-y-2 animate-in fade-in duration-200">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">Quick Cap:</span>
+                      {[2000, 3000, 5000].map((amt) => (
+                        <button
+                          key={amt}
+                          type="button"
+                          onClick={() => setPacingCapConfig({ ...pacingCapConfig, maxPerLoanAmount: amt })}
+                          className={`px-2.5 py-1 rounded-md border text-xs font-semibold transition-all cursor-pointer ${
+                            pacingCapConfig.maxPerLoanAmount === amt
+                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                              : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:border-slate-400'
+                          }`}
+                        >
+                          AED {amt.toLocaleString()}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <label className="text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                        Max Payoff / Loan / Mo:
+                      </label>
+                      <input
+                        type="number"
+                        min="200"
+                        step="250"
+                        value={pacingCapConfig.maxPerLoanAmount}
+                        onChange={(e) =>
+                          setPacingCapConfig({
+                            ...pacingCapConfig,
+                            maxPerLoanAmount: Math.max(100, parseFloat(e.target.value) || 0),
+                          })
+                        }
+                        className="w-28 px-2.5 py-1 text-xs font-mono font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
+                      />
+                      <span className="text-xs text-slate-400">AED max</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-400 dark:text-slate-500 italic py-1">
+                    Uncapped: The engine will clear maximum debt permitted by the net fund without single-loan ceilings.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* FEATURE 3: WHAT-IF SIMULATION ACTIVE BANNER */}
+      {viewTab === 'avalanche' && plan.simulatedExcludedCount > 0 && (
+        <div className="p-4 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-cyan-500/10 dark:from-amber-950/40 dark:via-slate-900 dark:to-cyan-950/30 border border-amber-400/60 dark:border-amber-700 rounded-2xl shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-in fade-in duration-300">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-500 flex items-center justify-center shrink-0 border border-amber-500/30">
+              <EyeOff className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-amber-900 dark:text-amber-200">
+                  What-If Simulation Active ({plan.simulatedExcludedCount} loan{plan.simulatedExcludedCount > 1 ? 's' : ''} paused)
+                </h3>
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200">
+                  No Permanent Deletion
+                </span>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                Simulating what happens when selected loans are closed or paused. Calculations below reflect freed cashflow and saved interest charges.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4 shrink-0">
+            <div className="text-right">
+              <span className="text-[10px] text-slate-500 uppercase block font-semibold">Simulated Debt Drop</span>
+              <span className="text-sm font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                -AED {plan.simulatedDebtReduction.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div className="text-right pl-3 border-l border-amber-300 dark:border-amber-800">
+              <span className="text-[10px] text-slate-500 uppercase block font-semibold">Interest Saved</span>
+              <span className="text-sm font-bold font-mono text-cyan-600 dark:text-cyan-400">
+                AED {plan.simulatedMonthlyInterestSaved.toFixed(2)}/mo
+              </span>
+            </div>
+            <div className="text-right pl-3 border-l border-amber-300 dark:border-amber-800">
+              <span className="text-[10px] text-slate-500 uppercase block font-semibold">Cashflow Freed</span>
+              <span className="text-sm font-bold font-mono text-indigo-600 dark:text-indigo-400">
+                AED {plan.simulatedMonthlyCashFreed.toFixed(2)}/mo
+              </span>
+            </div>
+            <button
+              onClick={handleResetWhatIf}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded-lg shadow-2xs transition cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 1. NET DISPOSABLE CASH CALCULATION BANNER & CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -200,7 +583,7 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
           </div>
         </div>
 
-        {/* Net Fund Available (Total Income - Total Essentials) */}
+        {/* Net Clearing Fund: (Income - Essentials) - Living Buffer */}
         <div className={`p-4 rounded-2xl shadow-xs space-y-2 border ${
           plan.isDeficit
             ? 'bg-rose-50/70 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800'
@@ -216,7 +599,7 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
                 ? 'bg-rose-200 text-rose-900 dark:bg-rose-900 dark:text-rose-200'
                 : 'bg-emerald-600 text-white'
             }`}>
-              {plan.isDeficit ? 'Deficit' : 'Available'}
+              {plan.isDeficit ? 'Deficit' : 'For Debt'}
             </span>
           </div>
           <div className={`text-xl sm:text-2xl font-bold font-mono ${
@@ -224,12 +607,19 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
           }`}>
             AED {plan.netFund.toLocaleString('en-US', { minimumFractionDigits: 2 })}
           </div>
-          <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-tight">
-            <strong>Income − Essentials:</strong> Cash ready to deploy into debt clearance
-          </p>
+          <div className="text-[10px] text-slate-600 dark:text-slate-400 leading-tight space-y-0.5">
+            <div className="flex justify-between font-mono">
+              <span>(Income − Essentials):</span>
+              <span>AED {plan.baseNetCash.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between font-mono text-emerald-700 dark:text-emerald-400 font-semibold">
+              <span>− Living Buffer ({bufferConfig.mode === 'percentage' ? `${bufferConfig.percentage}%` : 'Fixed'}):</span>
+              <span>AED {plan.livingBufferAmount.toFixed(2)}</span>
+            </div>
+          </div>
         </div>
 
-        {/* Active Debt Outstanding */}
+        {/* Active Debt Outstanding (incorporating What-If simulation) */}
         <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -237,7 +627,7 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
               Active Loans Balance
             </span>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
-              {plan.activeLoansCount} loan(s)
+              {plan.activeLoansCount} active
             </span>
           </div>
           <div className="text-xl sm:text-2xl font-bold font-mono text-slate-900 dark:text-white">
@@ -263,28 +653,33 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
               </div>
               <div>
                 <h3 className="text-sm font-bold flex items-center gap-2 text-white">
-                  <span>Mathematical Debt Avalanche Principle</span>
+                  <span>Balanced Avalanche Payoff Strategy</span>
                   <span className="text-[10px] uppercase tracking-wider bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30">
                     Highest Interest First
                   </span>
+                  {pacingCapConfig.enabled && (
+                    <span className="text-[10px] uppercase tracking-wider bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded border border-indigo-500/30">
+                      Pacing Capped
+                    </span>
+                  )}
                 </h3>
                 <p className="text-xs text-slate-300 mt-0.5">
-                  The Net Fund of <strong>AED {plan.netFund.toFixed(2)}</strong> is mathematically prioritized. Every dirham
-                  targets loans carrying high interest rates first to eliminate expensive recurring interest charges. Open-ended loans calculate monthly interest dynamically.
+                  The Net Fund of <strong>AED {plan.netFund.toFixed(2)}</strong> (after reserving AED {plan.livingBufferAmount.toFixed(2)} for daily survival)
+                  targets loans carrying high interest rates first. Use the <strong>What-If toggle</strong> on each card to simulate closing or pausing loans.
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-3 shrink-0">
               <div className="text-right">
-                <span className="text-[10px] text-slate-400 block uppercase">Debt Cleared This Month</span>
+                <span className="text-[10px] text-slate-400 block uppercase font-medium">Debt Cleared This Month</span>
                 <span className="text-sm font-bold font-mono text-emerald-400">
                   AED {plan.totalSuggestedDebtPayment.toFixed(2)}
                 </span>
               </div>
               {plan.unallocatedCash > 0 && (
                 <div className="text-right pl-3 border-l border-slate-700">
-                  <span className="text-[10px] text-slate-400 block uppercase">Surplus Reserve</span>
+                  <span className="text-[10px] text-slate-400 block uppercase font-medium">Surplus Reserve</span>
                   <span className="text-sm font-bold font-mono text-indigo-300">
                     AED {plan.unallocatedCash.toFixed(2)}
                   </span>
@@ -299,20 +694,21 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
               <ShieldCheck className="w-12 h-12 text-emerald-500 mx-auto mb-3" />
               <h3 className="text-base font-bold text-slate-900 dark:text-white">Zero Active Debt!</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto mt-1">
-                All family loans have been completely settled. Your net fund of AED {plan.netFund.toFixed(2)} is 100% available as family savings.
+                All family loans are settled or simulated paused. Your net fund is 100% available as family savings.
               </p>
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="flex items-center justify-between px-1">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
                 <h2 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-2">
                   <span>Step-by-Step Avalanche Priority Order</span>
                   <span className="text-xs font-normal text-slate-500 lowercase font-sans">
-                    ({plan.allocations.length} active loans ranked)
+                    ({plan.activeLoansCount} active, {plan.simulatedExcludedCount} simulated paused)
                   </span>
                 </h2>
-                <span className="text-xs text-slate-500">
-                  Month Cycle: <strong className="text-slate-800 dark:text-slate-200">{currentMonth}</strong>
+                <span className="text-xs text-slate-500 flex items-center gap-1.5">
+                  <Info className="w-3.5 h-3.5 text-slate-400" />
+                  Toggle eye icon on any loan to simulate closure without losing data.
                 </span>
               </div>
 
@@ -326,18 +722,47 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
                     <div
                       key={step.loanId}
                       className={`p-5 rounded-2xl border transition-all shadow-xs ${
-                        step.willBeSettled
+                        step.isSimulatedExcluded
+                          ? 'bg-slate-100/60 dark:bg-slate-950/30 border-dashed border-slate-300 dark:border-slate-800 opacity-70'
+                          : step.willBeSettled
                           ? 'bg-gradient-to-r from-emerald-50/90 via-white to-white dark:from-emerald-950/40 dark:via-slate-900 dark:to-slate-900 border-emerald-400/80 dark:border-emerald-700'
                           : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
                       }`}
                     >
                       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                        {/* Left: Priority Rank & Lender info */}
+                        {/* Left: Priority Rank, Lender info, What-If toggle */}
                         <div className="space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="px-2.5 py-1 text-xs font-bold font-mono rounded-lg bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-2xs">
-                              Priority #{step.priorityRank}
-                            </span>
+                            {/* Feature 3: What-If Simulation Toggle Switch */}
+                            <button
+                              type="button"
+                              onClick={() => toggleWhatIfLoan(step.loanId)}
+                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                                step.isSimulatedExcluded
+                                  ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:border-slate-400'
+                              }`}
+                              title={step.isSimulatedExcluded ? 'Click to re-include loan in active schedule' : 'Click to simulate loan closure / pause'}
+                            >
+                              {step.isSimulatedExcluded ? (
+                                <>
+                                  <EyeOff className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                                  <span>Paused in Simulation</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Eye className="w-3.5 h-3.5 text-slate-500" />
+                                  <span>Active (What-If)</span>
+                                </>
+                              )}
+                            </button>
+
+                            {!step.isSimulatedExcluded && (
+                              <span className="px-2.5 py-1 text-xs font-bold font-mono rounded-lg bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-2xs">
+                                Priority #{step.priorityRank}
+                              </span>
+                            )}
+
                             <span className="text-base font-bold text-slate-900 dark:text-white">
                               {step.lender}
                             </span>
@@ -357,7 +782,7 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
                               {step.ratePct.toFixed(2)}% Monthly Rate
                             </span>
 
-                            {/* Open-Ended vs Fixed Duration Badge */}
+                            {/* Duration Badge */}
                             {step.isOpenEnded ? (
                               <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-cyan-50 dark:bg-cyan-950/60 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800">
                                 <Clock className="w-3 h-3" />
@@ -367,6 +792,14 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
                               <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
                                 <Calendar className="w-3 h-3" />
                                 Fixed Duration ({step.interestDurationMonths} mo)
+                              </span>
+                            )}
+
+                            {/* Feature 2: Pacing Capped Badge */}
+                            {step.isPacingCapped && (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800">
+                                <Gauge className="w-3 h-3" />
+                                Pacing Capped (AED {step.appliedPacingCap?.toLocaleString()}/mo)
                               </span>
                             )}
 
@@ -397,24 +830,38 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
 
                         {/* Right: Allocation & Action */}
                         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 lg:gap-6 shrink-0 bg-slate-50 dark:bg-slate-950/50 p-3 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-800/80">
-                          <div>
-                            <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold block">
-                              Suggested Payoff This Month
-                            </span>
-                            <div className="flex items-baseline gap-2">
-                              <span className="text-xl sm:text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
-                                AED {step.totalSuggestedAllocation.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          {step.isSimulatedExcluded ? (
+                            <div className="space-y-1">
+                              <span className="text-[10px] uppercase tracking-wider text-amber-600 dark:text-amber-400 font-bold block">
+                                What-If Simulation Result
                               </span>
+                              <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                                Saves <strong>AED {step.monthlyInterestAmount.toFixed(2)}</strong> interest/mo
+                              </div>
+                              <div className="text-[11px] text-slate-500">
+                                Frees <strong>AED {step.monthlyTarget.toFixed(2)}</strong> monthly cashflow
+                              </div>
                             </div>
-                            <div className="text-[10px] text-slate-500 flex items-center gap-2 mt-0.5">
-                              <span>Min: AED {step.minRequiredAllocation.toFixed(2)}</span>
-                              {step.avalancheExtraAllocation > 0 && (
-                                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-                                  + Avalanche Extra: AED {step.avalancheExtraAllocation.toFixed(2)}
+                          ) : (
+                            <div>
+                              <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold block">
+                                Suggested Payoff This Month
+                              </span>
+                              <div className="flex items-baseline gap-2">
+                                <span className="text-xl sm:text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                                  AED {step.totalSuggestedAllocation.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                                 </span>
-                              )}
+                              </div>
+                              <div className="text-[10px] text-slate-500 flex items-center gap-2 mt-0.5">
+                                <span>Min: AED {step.minRequiredAllocation.toFixed(2)}</span>
+                                {step.avalancheExtraAllocation > 0 && (
+                                  <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                                    + Avalanche Extra: AED {step.avalancheExtraAllocation.toFixed(2)}
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                          </div>
+                          )}
 
                           <div className="flex flex-col sm:items-end gap-1 shrink-0 w-full sm:w-auto">
                             <span className="text-[10px] text-slate-500 uppercase">
@@ -428,7 +875,7 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
                               AED {step.projectedRemainingDebt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                             </span>
 
-                            {canEdit && onRecordLoanPayment && step.totalSuggestedAllocation > 0 && (
+                            {!step.isSimulatedExcluded && canEdit && onRecordLoanPayment && step.totalSuggestedAllocation > 0 && (
                               <button
                                 onClick={() => handleOpenPayModal(step)}
                                 className="mt-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow-xs transition cursor-pointer"
@@ -442,22 +889,24 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
                       </div>
 
                       {/* Progress Bar of Payoff */}
-                      <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/60">
-                        <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
-                          <span>Month Payment Impact on Debt</span>
-                          <span className="font-semibold text-slate-700 dark:text-slate-300">
-                            {percentOfDebtPaid}% of loan balance cleared
-                          </span>
+                      {!step.isSimulatedExcluded && (
+                        <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/60">
+                          <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
+                            <span>Month Payment Impact on Debt</span>
+                            <span className="font-semibold text-slate-700 dark:text-slate-300">
+                              {percentOfDebtPaid}% of loan balance cleared
+                            </span>
+                          </div>
+                          <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
+                            <div
+                              className={`h-full transition-all duration-500 ${
+                                step.willBeSettled ? 'bg-emerald-500' : 'bg-emerald-600'
+                              }`}
+                              style={{ width: `${percentOfDebtPaid}%` }}
+                            />
+                          </div>
                         </div>
-                        <div className="w-full h-2 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
-                          <div
-                            className={`h-full transition-all duration-500 ${
-                              step.willBeSettled ? 'bg-emerald-500' : 'bg-emerald-600'
-                            }`}
-                            style={{ width: `${percentOfDebtPaid}%` }}
-                          />
-                        </div>
-                      </div>
+                      )}
                     </div>
                   );
                 })}
