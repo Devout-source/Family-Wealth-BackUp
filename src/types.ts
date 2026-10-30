@@ -33,6 +33,10 @@ export interface LoanRecord {
   status: 'Active' | 'Settled' | 'Overdue';
   notes: string;
   planSummary: string;
+  // New Priority & Autofill Duration fields
+  autofillDuration?: boolean;
+  calculatedMonthsToZero?: number;
+  priorityRank?: number; // 1 to 5, where 1 is top priority
 }
 
 export interface RepaymentInstallment {
@@ -79,11 +83,32 @@ export interface EssentialBill {
   arrearsNotes?: string; // Notes on arrears plan or installment agreement
 }
 
+export interface RecurringBillTemplate {
+  id: string;
+  name: string;
+  category: 'Housing' | 'Utilities' | 'Groceries' | 'Education' | 'Transportation' | 'Healthcare' | 'Telecom';
+  amount: number;
+  dueDateDay: number; // 1 to 31
+  hasArrears?: boolean;
+  arrearsAmount?: number;
+  notes?: string;
+}
+
+export interface SavingsTransaction {
+  id: string;
+  date: string; // YYYY-MM-DD
+  monthYear: string; // YYYY-MM
+  type: 'deposit' | 'withdrawal';
+  amount: number;
+  notes: string;
+  memberId?: string;
+}
+
 export interface PaymentCharge {
   id: string;
   date: string;
   monthYear: string;
-  category: 'Loan Repayment' | 'Essential' | 'Credit Card' | 'Other Spending';
+  category: 'Loan Repayment' | 'Essential' | 'Credit Card' | 'Other Spending' | 'Savings Deposit';
   targetId: string;
   targetName: string;
   amount: number;
@@ -165,4 +190,9 @@ export interface FamilyVaultData {
   otherSpending: OtherSpending[];
   moneyLent: MoneyLent[];
   savingsGoals: MonthlySavingsGoal[];
+  // Extended Features
+  savingsTransactions?: SavingsTransaction[];
+  recurringTemplates?: RecurringBillTemplate[];
+  incomeRollovers?: Record<string, number>; // monthYear -> rollover AED amount
+  dismissedReminders?: string[]; // monthYears where monthly review banner was dismissed
 }

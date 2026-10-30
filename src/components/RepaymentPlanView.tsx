@@ -73,8 +73,8 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
     return DEFAULT_SAFETY_BUFFER;
   });
 
-  // 2. Sustainable Monthly Pacing Caps
-  const [pacingCapConfig, setPacingCapConfig] = useState<PacingCapConfig>(() => {
+  // 2. Sustainable Monthly Pacing Caps (Deprecated - automated priority distribution)
+  const [pacingCapConfig] = useState<PacingCapConfig>(() => {
     try {
       const saved = localStorage.getItem(PACING_STORAGE_KEY);
       if (saved) return JSON.parse(saved);
@@ -246,7 +246,7 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
         </div>
       </div>
 
-      {/* FEATURE 1 & 2: CONTROLS PANEL FOR SAFETY BUFFER & MONTHLY PACING */}
+      {/* CONTROLS & REAL-TIME NET CASH FLOW INDICATOR */}
       {viewTab === 'avalanche' && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xs overflow-hidden transition-all">
           <div
@@ -259,14 +259,15 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
               </div>
               <div>
                 <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <span>Payoff Safety Buffer & Pacing Settings</span>
-                  <span className="text-[10px] font-normal px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                  <span>Payoff Safety Buffer & Real-Time Net Cash Flow</span>
+                  <span className="text-[10px] font-normal px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono">
                     Buffer: {bufferConfig.mode === 'percentage' ? `${bufferConfig.percentage}%` : `AED ${bufferConfig.fixedAmount}`}
-                    {pacingCapConfig.enabled ? ` • Paced: AED ${pacingCapConfig.maxPerLoanAmount}/mo` : ' • Uncapped'}
+                    {' • '}
+                    Net Flow: AED {plan.netCashFlow.toLocaleString()}
                   </span>
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Protect cash for daily food, groceries and survival before accelerating debt payments.
+                  Protect cash for daily food and survival, with real-time tracking of net cash surplus after debt payoffs.
                 </p>
               </div>
             </div>
@@ -284,7 +285,7 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
                   <div className="flex items-center gap-1.5">
                     <ShieldCheck className="w-4 h-4 text-emerald-500" />
                     <span className="text-xs font-bold text-slate-900 dark:text-white">
-                      1. Living Safety Buffer (Food & Daily Survival)
+                      Living Safety Buffer (Food & Survival)
                     </span>
                   </div>
                   <span className="text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400">
@@ -410,80 +411,58 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
                 </div>
               </div>
 
-              {/* Feature 2: Sustainable Monthly Pacing Caps Config */}
+              {/* Feature 3: Real-Time Net Cash Flow Indicator (Replaces rigid pacing caps) */}
               <div className="space-y-3 p-4 rounded-xl bg-slate-50/70 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800/80">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
-                    <Gauge className="w-4 h-4 text-indigo-500" />
+                    <Gauge className="w-4 h-4 text-emerald-500" />
                     <span className="text-xs font-bold text-slate-900 dark:text-white">
-                      2. Sustainable Monthly Pacing Caps
+                      Real-Time Net Cash Flow Indicator
                     </span>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={pacingCapConfig.enabled}
-                      onChange={(e) =>
-                        setPacingCapConfig({ ...pacingCapConfig, enabled: e.target.checked })
-                      }
-                      className="sr-only peer"
-                    />
-                    <div className="w-8 h-4 bg-slate-300 peer-focus:outline-hidden rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all dark:border-slate-600 peer-checked:bg-indigo-600" />
-                    <span className="ml-2 text-[11px] font-semibold text-slate-700 dark:text-slate-300">
-                      {pacingCapConfig.enabled ? 'Enabled' : 'Disabled'}
-                    </span>
-                  </label>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    plan.netCashFlow >= 0
+                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                      : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                  }`}>
+                    {plan.netCashFlow >= 0 ? 'Cash Positive' : 'Deficit Warning'}
+                  </span>
                 </div>
 
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Caps maximum repayment allocated to any single loan in one month, distributing payments sustainably over time.
+                  Live cash balance after all monthly income, essential bills, active debt payments, and survival buffer:
                 </p>
 
-                {pacingCapConfig.enabled ? (
-                  <div className="space-y-2 animate-in fade-in duration-200">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">Quick Cap:</span>
-                      {[2000, 3000, 5000].map((amt) => (
-                        <button
-                          key={amt}
-                          type="button"
-                          onClick={() => setPacingCapConfig({ ...pacingCapConfig, maxPerLoanAmount: amt })}
-                          className={`px-2.5 py-1 rounded-md border text-xs font-semibold transition-all cursor-pointer ${
-                            pacingCapConfig.maxPerLoanAmount === amt
-                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
-                              : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 hover:border-slate-400'
-                          }`}
-                        >
-                          AED {amt.toLocaleString()}
-                        </button>
-                      ))}
-                    </div>
+                {/* Net Cash Flow Visual Metrics */}
+                <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-slate-500">Uncommitted Cash Surplus:</span>
+                    <span className={`text-base font-bold font-mono ${
+                      plan.netCashFlow >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                    }`}>
+                      {plan.netCashFlow >= 0 ? '+' : ''}AED {plan.netCashFlow.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
 
-                    <div className="flex items-center gap-2 pt-1">
-                      <label className="text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                        Max Payoff / Loan / Mo:
-                      </label>
-                      <input
-                        type="number"
-                        min="200"
-                        step="250"
-                        value={pacingCapConfig.maxPerLoanAmount}
-                        onChange={(e) =>
-                          setPacingCapConfig({
-                            ...pacingCapConfig,
-                            maxPerLoanAmount: Math.max(100, parseFloat(e.target.value) || 0),
-                          })
-                        }
-                        className="w-28 px-2.5 py-1 text-xs font-mono font-bold bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white"
-                      />
-                      <span className="text-xs text-slate-400">AED max</span>
+                  <div className="space-y-1 text-[10px] font-mono text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-800">
+                    <div className="flex justify-between">
+                      <span>Total Income + Rollover:</span>
+                      <span className="text-slate-800 dark:text-slate-200">AED {plan.totalInflow.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-rose-600 dark:text-rose-400">
+                      <span>− Committed Essentials:</span>
+                      <span>AED {plan.totalEssentials.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
+                      <span>− Debt Payoff Allocated:</span>
+                      <span>AED {plan.totalSuggestedDebtPayment.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-indigo-600 dark:text-indigo-400">
+                      <span>− Living Safety Buffer:</span>
+                      <span>AED {plan.livingBufferAmount.toFixed(2)}</span>
                     </div>
                   </div>
-                ) : (
-                  <div className="text-xs text-slate-400 dark:text-slate-500 italic py-1">
-                    Uncapped: The engine will clear maximum debt permitted by the net fund without single-loan ceilings.
-                  </div>
-                )}
+                </div>
               </div>
             </div>
           )}
@@ -795,11 +774,11 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
                               </span>
                             )}
 
-                            {/* Feature 2: Pacing Capped Badge */}
-                            {step.isPacingCapped && (
-                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800">
-                                <Gauge className="w-3 h-3" />
-                                Pacing Capped (AED {step.appliedPacingCap?.toLocaleString()}/mo)
+                            {/* Payoff Timeline Badge */}
+                            {!step.isSimulatedExcluded && (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/80 text-indigo-800 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800">
+                                <Clock className="w-3 h-3" />
+                                Zero-Out Timeline: {step.monthsToPayoff} mo
                               </span>
                             )}
 
@@ -822,8 +801,8 @@ export const RepaymentPlanView: React.FC<RepaymentPlanViewProps> = ({
                             </span>
                             <span>•</span>
                             <span>
-                              Monthly Min Target:{' '}
-                              <strong>AED {step.monthlyTarget.toLocaleString('en-US', { minimumFractionDigits: 2 })}</strong>
+                              Computed Installment:{' '}
+                              <strong className="text-emerald-700 dark:text-emerald-400">AED {step.monthlyInstallmentAmount.toFixed(2)}/mo</strong>
                             </span>
                           </div>
                         </div>

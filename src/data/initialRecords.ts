@@ -74,6 +74,8 @@ export const initialFamilyVault: FamilyVaultData = {
       status: 'Active',
       notes: 'Personal loan agreement',
       planSummary: '6 instalment(s) | total planned AED 4,044.91',
+      priorityRank: 1,
+      autofillDuration: false,
     },
     {
       id: 'L2',
@@ -97,6 +99,8 @@ export const initialFamilyVault: FamilyVaultData = {
       status: 'Active',
       notes: 'Short term bridging loan',
       planSummary: '1 instalment(s) | total planned AED 2,150.00',
+      priorityRank: 2,
+      autofillDuration: false,
     },
   ],
   installments: [
@@ -455,6 +459,47 @@ export const initialFamilyVault: FamilyVaultData = {
       category: 'Emergency Fund',
     },
   ],
+  savingsTransactions: [
+    {
+      id: 'sav-init-1',
+      date: '2026-10-01',
+      monthYear: '2026-10',
+      type: 'deposit',
+      amount: 4500.0,
+      notes: 'Initial family liquidity reserve',
+      memberId: 'm1',
+    },
+  ],
+  recurringTemplates: [
+    {
+      id: 'tmpl-1',
+      name: 'Family Apartment Rent (Al Barsha)',
+      category: 'Housing',
+      amount: 6500.0,
+      dueDateDay: 15,
+      notes: 'Standard lease payment',
+    },
+    {
+      id: 'tmpl-2',
+      name: 'DEWA (Electricity & Water)',
+      category: 'Utilities',
+      amount: 820.0,
+      dueDateDay: 20,
+      notes: 'Monthly utility bill',
+    },
+    {
+      id: 'tmpl-3',
+      name: 'Home Fiber Broadband & Mobile Lines',
+      category: 'Telecom',
+      amount: 540.0,
+      dueDateDay: 28,
+      notes: 'Etisalat home internet',
+    },
+  ],
+  incomeRollovers: {
+    '2026-10': 3200.0,
+  },
+  dismissedReminders: [],
 };
 
 export function createBlankVault(customMembers?: FamilyMember[]): FamilyVaultData {
@@ -518,5 +563,26 @@ export function createBlankVault(customMembers?: FamilyMember[]): FamilyVaultDat
     otherSpending: [],
     moneyLent: [],
     savingsGoals: [],
+    savingsTransactions: [],
+    recurringTemplates: [
+      {
+        id: 'tmpl-1',
+        name: 'Family Apartment Rent (Al Barsha)',
+        category: 'Housing',
+        amount: 6500.0,
+        dueDateDay: 15,
+        notes: 'Standard lease payment',
+      },
+      {
+        id: 'tmpl-2',
+        name: 'DEWA (Electricity & Water)',
+        category: 'Utilities',
+        amount: 820.0,
+        dueDateDay: 20,
+        notes: 'Monthly utility bill',
+      },
+    ],
+    incomeRollovers: {},
+    dismissedReminders: [],
   };
 }

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Pencil, Trash2, Plus, AlertCircle, CheckCircle2, X } from 'lucide-react';
-import { EssentialBill, FamilyMember } from '../types.ts';
+import { Pencil, Trash2, Plus, AlertCircle, CheckCircle2, X, BookmarkCheck, Copy, Sparkles } from 'lucide-react';
+import { EssentialBill, FamilyMember, RecurringBillTemplate } from '../types.ts';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal.tsx';
 import { sanitizeCurrency } from '../utils/numberSanitizer.ts';
 
@@ -8,11 +8,15 @@ export interface EssentialsViewProps {
   essentials: EssentialBill[];
   currentMonth: string;
   members: FamilyMember[];
+  templates?: RecurringBillTemplate[];
   onAddEssential?: (bill: EssentialBill) => void;
   onUpdateEssential?: (bill: EssentialBill) => void;
   onDeleteEssential?: (billId: string) => void;
   onMarkPaid: (id: string, date: string) => void;
   onRecordArrearsPayment?: (billId: string, amount: number, paymentMethod: string, notes: string) => void;
+  onSaveTemplate?: (template: RecurringBillTemplate) => void;
+  onDeleteTemplate?: (templateId: string) => void;
+  onApplyTemplates?: () => void;
   canEdit?: boolean;
   availableMoney?: number;
 }
@@ -20,17 +24,23 @@ export interface EssentialsViewProps {
 export const EssentialsView: React.FC<EssentialsViewProps> = ({
   essentials,
   currentMonth,
+  templates = [],
   onAddEssential,
   onUpdateEssential,
   onDeleteEssential,
   onMarkPaid,
   onRecordArrearsPayment,
+  onSaveTemplate,
+  onDeleteTemplate,
+  onApplyTemplates,
   canEdit = true,
 }) => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingBill, setEditingBill] = useState<EssentialBill | null>(null);
   const [deleteBillTarget, setDeleteBillTarget] = useState<EssentialBill | null>(null);
   const [arrearsBillTarget, setArrearsBillTarget] = useState<EssentialBill | null>(null);
+  const [isTemplatesModalOpen, setIsTemplatesModalOpen] = useState(false);
+  const [templateSavedToast, setTemplateSavedToast] = useState<string | null>(null);
 
   // Add form state
   const [name, setName] = useState('');
@@ -133,16 +143,45 @@ export const EssentialsView: React.FC<EssentialsViewProps> = ({
           </p>
         </div>
 
-        {canEdit && onAddEssential && (
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {canEdit && onApplyTemplates && templates && templates.length > 0 && (
+            <button
+              onClick={onApplyTemplates}
+              className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-semibold rounded-xl transition cursor-pointer"
+              title="Generate this month's bills from saved recurring templates"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+              <span>Apply Templates ({templates.length})</span>
+            </button>
+          )}
+
           <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-semibold rounded-xl shadow-xs transition shrink-0 cursor-pointer"
+            onClick={() => setIsTemplatesModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold rounded-xl transition cursor-pointer"
+            title="View and configure reusable recurring bill templates"
           >
-            <Plus className="w-4 h-4" />
-            Add Essential Bill
+            <BookmarkCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span>Templates</span>
           </button>
-        )}
+
+          {canEdit && onAddEssential && (
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-semibold rounded-xl shadow-xs transition shrink-0 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Add Essential Bill
+            </button>
+          )}
+        </div>
       </div>
+
+      {templateSavedToast && (
+        <div className="p-3 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 rounded-xl text-xs text-emerald-800 dark:text-emerald-200 flex items-center gap-2">
+          <BookmarkCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{templateSavedToast}</span>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -271,6 +310,29 @@ export const EssentialsView: React.FC<EssentialsViewProps> = ({
                           title="Pay Arrears Installment"
                         >
                           Pay Arrears
+                        </button>
+                      )}
+                      {canEdit && onSaveTemplate && (
+                        <button
+                          onClick={() => {
+                            const day = parseInt(bill.dueDate?.slice(-2)) || 15;
+                            onSaveTemplate({
+                              id: `tmpl-${Date.now()}`,
+                              name: bill.name,
+                              category: bill.category,
+                              amount: bill.amount,
+                              dueDateDay: day,
+                              hasArrears: bill.hasArrears,
+                              arrearsAmount: bill.arrearsAmount,
+                              notes: bill.arrearsNotes || 'Saved recurring template',
+                            });
+                            setTemplateSavedToast(`Saved "${bill.name}" as reusable monthly template!`);
+                            setTimeout(() => setTemplateSavedToast(null), 3000);
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-indigo-600 transition-colors rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-950/30 cursor-pointer"
+                          title="Save as Reusable Recurring Template"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
                         </button>
                       )}
                       {canEdit && onUpdateEssential && (
@@ -628,6 +690,99 @@ export const EssentialsView: React.FC<EssentialsViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Manage Recurring Bill Templates Modal */}
+      {isTemplatesModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <BookmarkCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                <h3 className="font-bold text-slate-900 dark:text-white">Recurring Bill Templates</h3>
+              </div>
+              <button
+                onClick={() => setIsTemplatesModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-4 text-xs">
+              <p className="text-slate-500">
+                Standard monthly expenses like apartment rent, DEWA, and WiFi saved as reusable templates so you never have to manually re-enter them each month.
+              </p>
+
+              {(!templates || templates.length === 0) ? (
+                <div className="text-center py-8 text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+                  No recurring templates saved yet. Click the copy icon next to any bill in the table to save it as a template.
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {templates.map((tmpl) => (
+                    <div
+                      key={tmpl.id}
+                      className="p-3.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-xl flex items-center justify-between gap-3"
+                    >
+                      <div>
+                        <div className="font-bold text-slate-900 dark:text-white text-sm">{tmpl.name}</div>
+                        <div className="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
+                          <span className="px-1.5 py-0.2 rounded bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                            {tmpl.category}
+                          </span>
+                          <span>•</span>
+                          <span>Due day: {tmpl.dueDateDay} of each month</span>
+                          {tmpl.notes && <span>• {tmpl.notes}</span>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="font-mono font-bold text-slate-900 dark:text-white">
+                          AED {tmpl.amount.toFixed(2)}
+                        </span>
+                        {canEdit && onDeleteTemplate && (
+                          <button
+                            onClick={() => onDeleteTemplate(tmpl.id)}
+                            className="p-1 text-slate-400 hover:text-rose-600 transition"
+                            title="Delete Template"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-3.5 bg-slate-50 dark:bg-slate-950/60 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <span className="text-[11px] text-slate-500 font-mono">
+                {templates?.length || 0} template(s) saved
+              </span>
+              <div className="flex items-center gap-2">
+                {canEdit && onApplyTemplates && templates && templates.length > 0 && (
+                  <button
+                    onClick={() => {
+                      onApplyTemplates();
+                      setIsTemplatesModalOpen(false);
+                    }}
+                    className="px-3.5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Apply for {currentMonth}</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsTemplatesModalOpen(false)}
+                  className="px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 transition cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

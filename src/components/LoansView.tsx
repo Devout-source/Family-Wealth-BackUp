@@ -129,6 +129,8 @@ export const LoansView: React.FC<LoansViewProps> = ({
   const [finalDate, setFinalDate] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [notes, setNotes] = useState('');
+  const [autofillDuration, setAutofillDuration] = useState(false);
+  const [priorityRank, setPriorityRank] = useState<number>(1);
 
   // Payment form state
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
@@ -137,16 +139,20 @@ export const LoansView: React.FC<LoansViewProps> = ({
 
   // Real-time calculation previews for new loan
   const calculatedMonthlyInterest = Math.round(principal * (monthlyRatePct / 100) * 100) / 100;
+  // Dynamic autofill months: estimate based on principal and monthly target
+  const dynamicAutofillMonths = Math.max(1, Math.ceil(principal / Math.max(200, calculatedMonthlyInterest || 200)));
+  const activeDurationMonths = autofillDuration ? dynamicAutofillMonths : durationMonths;
   const calculatedTotalInterest = isOpenEnded
     ? calculatedMonthlyInterest
-    : Math.round(calculatedMonthlyInterest * durationMonths * 100) / 100;
+    : Math.round(calculatedMonthlyInterest * activeDurationMonths * 100) / 100;
   const calculatedTotalToRepay = Math.round((principal + calculatedTotalInterest) * 100) / 100;
+  const calculatedMonthlyInstallment = Math.round((calculatedTotalToRepay / (activeDurationMonths || 1)) * 100) / 100;
 
   const handleCreateLoan = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanPrincipal = sanitizeCurrency(principal);
     const cleanRate = sanitizeCurrency(monthlyRatePct);
-    const cleanDuration = isOpenEnded ? 0 : Math.max(1, Math.round(sanitizeCurrency(durationMonths)));
+    const cleanDuration = isOpenEnded ? 0 : Math.max(1, Math.round(sanitizeCurrency(activeDurationMonths)));
 
     if (!lender.trim() || cleanPrincipal <= 0) return;
 
@@ -176,6 +182,8 @@ export const LoansView: React.FC<LoansViewProps> = ({
       overdueAmount: 0,
       status: 'Active',
       notes: notes.trim(),
+      priorityRank: priorityRank || 1,
+      autofillDuration: autofillDuration,
       planSummary: isOpenEnded
         ? `Open-ended duration | dynamic monthly interest AED ${monthlyInterest.toFixed(2)}`
         : `${cleanDuration} instalment(s) | total planned AED ${totalToRepay.toFixed(2)}`,
@@ -190,6 +198,8 @@ export const LoansView: React.FC<LoansViewProps> = ({
     setFinalDate('');
     setNotes('');
     setIsOpenEnded(false);
+    setAutofillDuration(false);
+    setPriorityRank(1);
   };
 
   const handleSaveEditedLoan = (e: React.FormEvent) => {
@@ -199,7 +209,16 @@ export const LoansView: React.FC<LoansViewProps> = ({
     const cleanPrincipal = sanitizeCurrency(editingLoan.principal);
     const cleanRate = sanitizeCurrency(editingLoan.monthlyInterestRatePct);
     const isOpenEndedLoan = !editingLoan.interestDurationMonths || editingLoan.interestDurationMonths <= 0;
-    const cleanDur = isOpenEndedLoan ? 0 : Math.round(sanitizeCurrency(editingLoan.interestDurationMonths));
+    const isAutofill = !!editingLoan.autofillDuration;
+    
+    // Dynamic duration if autofill is active
+    let cleanDur = isOpenEndedLoan ? 0 : Math.round(sanitizeCurrency(editingLoan.interestDurationMonths));
+    if (isAutofill && !isOpenEndedLoan) {
+      const planned = sanitizeCurrency(editingLoan.plannedPaymentThisMonth);
+      const monthlyInt = Math.round(cleanPrincipal * (cleanRate / 100) * 100) / 100;
+      cleanDur = Math.max(1, Math.ceil(cleanPrincipal / (planned > 0 ? planned : Math.max(200, monthlyInt))));
+    }
+
     const cleanPaid = sanitizeCurrency(editingLoan.paidSoFar);
     const cleanPlanned = sanitizeCurrency(editingLoan.plannedPaymentThisMonth);
 
@@ -220,6 +239,8 @@ export const LoansView: React.FC<LoansViewProps> = ({
       totalToRepay: totalRepay,
       leftToPay: left,
       status: left <= 0 ? 'Settled' : editingLoan.status,
+      priorityRank: editingLoan.priorityRank || 1,
+      autofillDuration: isAutofill,
     };
 
     onUpdateLoan(updated);
@@ -392,13 +413,53 @@ export const LoansView: React.FC<LoansViewProps> = ({
                         <span className="text-[11px] text-slate-500 bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded">
                           {loan.purpose}
                         </span>
+                        {/* Priority Rank Badge & Selector */}
+                        <div className="flex items-center gap-1">
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              (loan.priorityRank || 1) === 1
+                                ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            Priority #{loan.priorityRank || 1}
+                          </span>
+                          {canEdit && onUpdateLoan && (
+                            <select
+                              value={loan.priorityRank || 1}
+                              onChange={(e) => {
+                                const newRank = parseInt(e.target.value) || 1;
+                                onUpdateLoan({ ...loan, priorityRank: newRank });
+                              }}
+                              className="text-[10px] bg-transparent border border-slate-200 dark:border-slate-700 rounded px-1 py-0.5 text-slate-600 dark:text-slate-400 cursor-pointer"
+                              title="Set priority rank (1 = highest waterfall priority)"
+                            >
+                              <option value={1}>P1 (Top)</option>
+                              <option value={2}>P2</option>
+                              <option value={3}>P3</option>
+                              <option value={4}>P4</option>
+                              <option value={5}>P5</option>
+                            </select>
+                          )}
+                        </div>
                       </div>
-                      <div className="text-xs text-slate-500 mt-1 flex items-center gap-3 font-mono">
+                      <div className="text-xs text-slate-500 mt-1 flex items-center gap-2 flex-wrap font-mono">
                         <span>Principal: AED {loan.principal.toFixed(2)}</span>
                         <span>•</span>
                         <span>Rate: {loan.monthlyInterestRatePct}% / mo</span>
                         <span>•</span>
-                        <span>{loan.interestDurationMonths} mo</span>
+                        <span className="inline-flex items-center gap-1">
+                          {loan.interestDurationMonths} mo
+                          {loan.autofillDuration && (
+                            <span className="text-[9px] font-sans font-bold uppercase px-1.5 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
+                              Autofill
+                            </span>
+                          )}
+                        </span>
+                        <span>•</span>
+                        <span className="text-emerald-700 dark:text-emerald-400 font-semibold font-sans">
+                          Installment: AED {(loan.totalToRepay / (loan.interestDurationMonths || 1)).toFixed(2)} / mo
+                        </span>
                       </div>
                     </div>
                     <div className="text-right">
@@ -707,7 +768,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-4 gap-3">
                 <div>
                   <label className="text-xs font-medium text-slate-700 dark:text-slate-300 block mb-1">
                     Principal (AED)
@@ -737,18 +798,63 @@ export const LoansView: React.FC<LoansViewProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-slate-700 dark:text-slate-300 block mb-1">
-                    Duration (mo)
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                      Duration (mo)
+                    </label>
+                    <label className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold flex items-center gap-1 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!editingLoan.autofillDuration}
+                        onChange={(e) => {
+                          const isAuto = e.target.checked;
+                          let computedMonths = editingLoan.interestDurationMonths;
+                          if (isAuto) {
+                            const planned = sanitizeCurrency(editingLoan.plannedPaymentThisMonth);
+                            const monthlyInt = Math.round(editingLoan.principal * (editingLoan.monthlyInterestRatePct / 100));
+                            computedMonths = Math.max(1, Math.ceil(editingLoan.principal / (planned > 0 ? planned : Math.max(200, monthlyInt))));
+                          }
+                          setEditingLoan({
+                            ...editingLoan,
+                            autofillDuration: isAuto,
+                            interestDurationMonths: computedMonths,
+                          });
+                        }}
+                        className="rounded text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <span>Autofill</span>
+                    </label>
+                  </div>
                   <input
                     type="number"
                     min="1"
                     max="120"
+                    disabled={!!editingLoan.autofillDuration}
                     value={editingLoan.interestDurationMonths}
                     onChange={(e) => setEditingLoan({ ...editingLoan, interestDurationMonths: parseInt(e.target.value) || 1 })}
                     onBlur={() => setEditingLoan({ ...editingLoan, interestDurationMonths: Math.max(1, Math.round(sanitizeCurrency(editingLoan.interestDurationMonths))) })}
-                    className="w-full px-3 py-2 text-xs font-mono bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-white"
+                    className={`w-full px-3 py-2 text-xs font-mono border rounded-lg text-slate-900 dark:text-white ${
+                      editingLoan.autofillDuration
+                        ? 'bg-indigo-50/50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold'
+                        : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800'
+                    }`}
                   />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-700 dark:text-slate-300 block mb-1">
+                    Priority Rank
+                  </label>
+                  <select
+                    value={editingLoan.priorityRank || 1}
+                    onChange={(e) => setEditingLoan({ ...editingLoan, priorityRank: parseInt(e.target.value) || 1 })}
+                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-white font-semibold"
+                  >
+                    <option value={1}>1 (Top Priority)</option>
+                    <option value={2}>2 (High)</option>
+                    <option value={3}>3 (Normal)</option>
+                    <option value={4}>4 (Secondary)</option>
+                    <option value={5}>5 (Low)</option>
+                  </select>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -945,7 +1051,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-4 gap-3">
                 <div>
                   <label className="text-xs font-medium text-slate-700 dark:text-slate-300 block mb-1">
                     Principal (AED)
@@ -979,19 +1085,26 @@ export const LoansView: React.FC<LoansViewProps> = ({
                     <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
                       Duration
                     </label>
-                    <label className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1 cursor-pointer">
+                    <label className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold flex items-center gap-1 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={isOpenEnded}
-                        onChange={(e) => setIsOpenEnded(e.target.checked)}
-                        className="rounded text-emerald-600 focus:ring-emerald-500"
+                        checked={autofillDuration}
+                        onChange={(e) => {
+                          setAutofillDuration(e.target.checked);
+                          if (e.target.checked) setIsOpenEnded(false);
+                        }}
+                        className="rounded text-indigo-600 focus:ring-indigo-500"
                       />
-                      <span>Open-ended</span>
+                      <span>Autofill</span>
                     </label>
                   </div>
-                  {isOpenEnded ? (
+                  {autofillDuration ? (
+                    <div className="px-2.5 py-1.5 text-xs font-bold font-mono bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 rounded-lg border border-indigo-200 dark:border-indigo-800 truncate">
+                      {activeDurationMonths} mo (Auto)
+                    </div>
+                  ) : isOpenEnded ? (
                     <div className="px-2.5 py-1.5 text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 rounded-lg border border-emerald-300 dark:border-emerald-800 truncate">
-                      Dynamic ({monthlyRatePct}% / mo)
+                      Dynamic
                     </div>
                   ) : (
                     <input
@@ -1006,6 +1119,22 @@ export const LoansView: React.FC<LoansViewProps> = ({
                     />
                   )}
                 </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-700 dark:text-slate-300 block mb-1">
+                    Priority Rank
+                  </label>
+                  <select
+                    value={priorityRank}
+                    onChange={(e) => setPriorityRank(parseInt(e.target.value) || 1)}
+                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-white font-semibold"
+                  >
+                    <option value={1}>1 (Top Priority)</option>
+                    <option value={2}>2 (High)</option>
+                    <option value={3}>3 (Normal)</option>
+                    <option value={4}>4 (Secondary)</option>
+                    <option value={5}>5 (Low)</option>
+                  </select>
+                </div>
               </div>
               {/* Real-time Calculation Preview Card */}
               <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 rounded-lg space-y-1.5 text-xs font-mono">
@@ -1017,12 +1146,18 @@ export const LoansView: React.FC<LoansViewProps> = ({
                   <span className="font-semibold text-slate-900 dark:text-white">AED {calculatedMonthlyInterest.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                  <span>{isOpenEnded ? 'Dynamic Interest Target:' : `Total Interest for ${durationMonths} month(s):`}</span>
+                  <span>
+                    {autofillDuration ? `Autofilled Term (${activeDurationMonths} months):` : isOpenEnded ? 'Dynamic Target:' : `Total Interest (${activeDurationMonths} mo):`}
+                  </span>
                   <span className="font-semibold text-amber-600 dark:text-amber-400">AED {calculatedTotalInterest.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-slate-700 dark:text-slate-200 pt-1 border-t border-emerald-200 dark:border-emerald-800">
                   <span className="font-sans font-bold">Total To Repay:</span>
                   <span className="font-bold text-emerald-700 dark:text-emerald-300">AED {calculatedTotalToRepay.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-indigo-700 dark:text-indigo-300 font-semibold pt-1 border-t border-emerald-200/60 dark:border-emerald-800/60">
+                  <span className="font-sans">Monthly Installment Amount:</span>
+                  <span className="font-bold font-mono">AED {calculatedMonthlyInstallment.toFixed(2)} / mo</span>
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-3">

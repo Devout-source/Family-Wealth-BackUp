@@ -14,12 +14,14 @@ import {
   Smartphone,
   X,
   MoreHorizontal,
+  PiggyBank,
 } from 'lucide-react';
 
 export type ActiveTab =
   | 'dashboard'
   | 'loans'
   | 'repayment_plan'
+  | 'savings_vault'
   | 'income'
   | 'essentials'
   | 'payments'
@@ -68,6 +70,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'repayment_plan',
       label: 'Repayment Plan',
       icon: <CalendarCheck className="w-4 h-4" />,
+    },
+    {
+      id: 'savings_vault',
+      label: 'Savings Vault',
+      icon: <PiggyBank className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />,
     },
     {
       id: 'income',

@@ -9,13 +9,15 @@ export interface SafetyBufferConfig {
 
 export interface PacingCapConfig {
   enabled: boolean;
-  maxPerLoanAmount: number; // e.g. 3000 (AED per loan per month)
+  maxPerLoanAmount: number;
 }
 
 export interface DebtAvalancheOptions {
   bufferConfig?: SafetyBufferConfig;
   pacingCapConfig?: PacingCapConfig;
   excludedLoanIds?: string[]; // IDs of loans simulated closed or paused (What-If simulation)
+  incomeRollover?: number; // Unspent cash carried over from previous month
+  useManualPriority?: boolean; // When true, respects priorityRank strictly before interest rate
 }
 
 export interface LoanAllocationStep {
@@ -28,29 +30,31 @@ export interface LoanAllocationStep {
   isOpenEnded: boolean;
   interestDurationMonths: number;
   monthlyInterestAmount: number; // Principal * Rate / 100
-  monthlyTarget: number; // For open-ended: dynamic monthly interest; for fixed: planned monthly instalment
+  monthlyTarget: number; // For open-ended: dynamic monthly interest; for fixed: planned monthly installment
   minRequiredAllocation: number;
   avalancheExtraAllocation: number;
   totalSuggestedAllocation: number;
   projectedRemainingDebt: number;
   willBeSettled: boolean;
-  priorityRank: number; // 1 = highest interest rate
+  priorityRank: number; // 1 = highest priority rank
   status: 'Active' | 'Settled' | 'Overdue';
   isSimulatedExcluded: boolean; // True if user toggled this loan off in What-If simulation
-  isPacingCapped: boolean; // True if allocation reached the monthly pacing limit
-  appliedPacingCap?: number;
+  monthsToPayoff: number; // Calculated exact months to zero out balance based on current allocation
+  monthlyInstallmentAmount: number; // Principal + Interest / calculated months
 }
 
 export interface RepaymentPlanCalculation {
   monthYear: string;
   totalIncome: number;
+  incomeRollover: number; // Cash carried from previous month
+  totalInflow: number; // totalIncome + incomeRollover
   totalEssentials: number;
   baseEssentialsAmount: number;
   arrearsAmount: number;
-  baseNetCash: number; // Total Income - Total Essentials (before safety buffer)
+  baseNetCash: number; // totalInflow - totalEssentials (before safety buffer)
   livingBufferAmount: number; // Living Safety Buffer reserved for food and survival
   livingBufferConfig: SafetyBufferConfig;
-  netFund: number; // (Income - Essentials) - Living Buffer (exact amount available for debt clearing)
+  netFund: number; // (totalInflow - Essentials) - Living Buffer (exact amount available for debt clearing)
   totalActiveDebt: number; // Sum of leftToPay across included active loans
   baselineTotalDebt: number; // Total active debt before any simulation exclusions
   simulatedDebtReduction: number; // Total balance eliminated in simulation
@@ -59,13 +63,15 @@ export interface RepaymentPlanCalculation {
   totalMinDebtObligation: number; // Sum of minimum monthly targets
   totalSuggestedDebtPayment: number; // Sum of allocated debt payoff this month
   unallocatedCash: number; // Remaining surplus after all active debts are paid
-  isDeficit: boolean; // True if totalEssentials > totalIncome
+  netCashFlow: number; // Real-time Net Cash Flow: totalInflow - committed essentials - totalSuggestedDebtPayment - livingBuffer
+  isDeficit: boolean; // True if totalEssentials > totalInflow
   allocations: LoanAllocationStep[];
   activeLoansCount: number;
   simulatedExcludedCount: number;
   incomeSourcesCount: number;
   essentialsCount: number;
-  pacingCapConfig: PacingCapConfig;
+  maxMonthsToDebtFree: number; // Longest timeline among active loans
+  estimatedDebtFreeDate: string; // Projected month-year when all active loans reach AED 0.00
 }
 
 export const DEFAULT_SAFETY_BUFFER: SafetyBufferConfig = {
@@ -76,13 +82,13 @@ export const DEFAULT_SAFETY_BUFFER: SafetyBufferConfig = {
 
 export const DEFAULT_PACING_CAP: PacingCapConfig = {
   enabled: false,
-  maxPerLoanAmount: 3000, // Default 3,000 AED per loan cap when pacing is active
+  maxPerLoanAmount: 3000,
 };
 
 /**
- * Calculates the Net Disposable Cash with safety buffers and executes the Debt Avalanche
- * (highest interest rate first) payoff schedule across active family loans, supporting
- * sustainable pacing caps and interactive "What-If" simulation toggles.
+ * Calculates Net Disposable Cash and executes Priority-Driven Debt Repayment
+ * (Manual Priority 1-5 waterfall, followed by highest interest rate).
+ * Dynamically computes payoff timelines for each loan and real-time Net Cash Flow.
  */
 export function calculateDebtAvalanche(
   incomes: IncomeEntry[],
@@ -92,8 +98,8 @@ export function calculateDebtAvalanche(
   options?: DebtAvalancheOptions
 ): RepaymentPlanCalculation {
   const bufferConfig = options?.bufferConfig || DEFAULT_SAFETY_BUFFER;
-  const pacingCapConfig = options?.pacingCapConfig || DEFAULT_PACING_CAP;
   const excludedLoanIds = new Set(options?.excludedLoanIds || []);
+  const incomeRollover = roundToTwoDecimals(sanitizeCurrency(options?.incomeRollover || 0));
 
   // 1. Calculate Total Monthly Income from Income Log
   let monthIncomes = incomes.filter((i) => i.monthYear === currentMonth);
@@ -105,6 +111,7 @@ export function calculateDebtAvalanche(
   const totalIncome = roundToTwoDecimals(
     monthIncomes.reduce((acc, i) => acc + sanitizeCurrency(i.actualAmount || i.plannedAmount), 0)
   );
+  const totalInflow = roundToTwoDecimals(totalIncome + incomeRollover);
 
   // 2. Calculate Total Active Monthly Costs from Essentials & Arrears
   let monthEssentials = essentials.filter((e) => e.monthYear === currentMonth);
@@ -130,7 +137,7 @@ export function calculateDebtAvalanche(
   const totalEssentials = roundToTwoDecimals(baseEssentialsAmount + arrearsAmount);
 
   // 3. Calculate Base Net Cash & Living Safety Buffer
-  const baseNetCash = roundToTwoDecimals(totalIncome - totalEssentials);
+  const baseNetCash = roundToTwoDecimals(totalInflow - totalEssentials);
   const isDeficit = baseNetCash < 0;
 
   let livingBufferAmount = 0;
@@ -144,7 +151,7 @@ export function calculateDebtAvalanche(
     }
   }
 
-  // Net Clearing Fund available strictly for debt clearing: (Income - Essentials) - Living Buffer
+  // Net Clearing Fund available strictly for debt clearing: (Total Inflow - Essentials) - Living Buffer
   const netFund = roundToTwoDecimals(Math.max(0, baseNetCash - livingBufferAmount));
   let availableFund = netFund;
 
@@ -154,12 +161,19 @@ export function calculateDebtAvalanche(
     allActiveLoans.reduce((sum, l) => sum + sanitizeCurrency(l.leftToPay), 0)
   );
 
-  // Sort loans by interest rate descending (Debt Avalanche)
+  // Sort loans strictly by manual Priority Rank (1 to 5, ascending), then by interest rate descending (avalanche)
   const sortedLoans = [...allActiveLoans].sort((a, b) => {
+    const priorityA = a.priorityRank !== undefined && a.priorityRank > 0 ? a.priorityRank : 99;
+    const priorityB = b.priorityRank !== undefined && b.priorityRank > 0 ? b.priorityRank : 99;
+
+    if (priorityA !== priorityB) {
+      return priorityA - priorityB; // 1 before 2 before 3
+    }
+
     const rateA = sanitizeCurrency(a.monthlyInterestRatePct);
     const rateB = sanitizeCurrency(b.monthlyInterestRatePct);
     if (rateB !== rateA) {
-      return rateB - rateA; // Descending: 10% before 7.5% before 6% before 0%
+      return rateB - rateA; // Descending: 10% before 7.5% before 6%
     }
     return sanitizeCurrency(b.leftToPay) - sanitizeCurrency(a.leftToPay);
   });
@@ -213,7 +227,6 @@ export function calculateDebtAvalanche(
     monthlyTarget: number;
     minAllocation: number;
     extraAllocation: number;
-    isCapped: boolean;
   }
 
   const prelims: PreliminaryAllocation[] = includedLoans.map((loan) => {
@@ -240,7 +253,6 @@ export function calculateDebtAvalanche(
       monthlyTarget,
       minAllocation: 0,
       extraAllocation: 0,
-      isCapped: false,
     };
   });
 
@@ -248,10 +260,10 @@ export function calculateDebtAvalanche(
     prelims.reduce((sum, p) => sum + p.monthlyTarget, 0)
   );
 
-  // 6. Execute Avalanche Distribution with Sustainable Pacing Caps
+  // 6. Waterfall Distribution: strictly follows Priority Rank (1 to 5) then interest rate
   if (availableFund > 0) {
     if (availableFund <= totalMinDebtObligation) {
-      // Fund is limited: allocate minimum targets in order of priority (highest rate first)
+      // Fund is limited: allocate minimum targets in strict priority order
       for (const p of prelims) {
         if (availableFund <= 0) break;
         const alloc = Math.min(availableFund, p.monthlyTarget);
@@ -259,43 +271,30 @@ export function calculateDebtAvalanche(
         availableFund = roundToTwoDecimals(availableFund - alloc);
       }
     } else {
-      // Step A: Cover all minimum targets
+      // Step A: Cover all baseline minimum targets
       for (const p of prelims) {
         p.minAllocation = p.monthlyTarget;
         availableFund = roundToTwoDecimals(availableFund - p.monthlyTarget);
       }
 
-      // Step B: Distribute surplus cash into highest interest loans, honoring monthly pacing cap
-      const pacingCap = pacingCapConfig.enabled ? Math.max(100, pacingCapConfig.maxPerLoanAmount) : 0;
-
+      // Step B: Waterfall surplus cash starting from Priority 1 to eliminate balances quickly
       for (const p of prelims) {
         if (availableFund <= 0) break;
         const leftToPay = sanitizeCurrency(p.loan.leftToPay);
-
-        // Maximum extra that this loan can take
-        let maxAllowableTotal = leftToPay;
-        if (pacingCap > 0) {
-          maxAllowableTotal = Math.min(leftToPay, Math.max(p.minAllocation, pacingCap));
-        }
-
-        const maxExtra = roundToTwoDecimals(Math.max(0, maxAllowableTotal - p.minAllocation));
+        const maxExtra = roundToTwoDecimals(Math.max(0, leftToPay - p.minAllocation));
         if (maxExtra > 0) {
           const extra = Math.min(availableFund, maxExtra);
           p.extraAllocation = roundToTwoDecimals(extra);
           availableFund = roundToTwoDecimals(availableFund - extra);
-
-          if (pacingCap > 0 && p.minAllocation + p.extraAllocation >= pacingCap && p.minAllocation + p.extraAllocation < leftToPay) {
-            p.isCapped = true;
-          }
-        } else if (pacingCap > 0 && p.minAllocation >= pacingCap) {
-          p.isCapped = true;
         }
       }
     }
   }
 
-  // 7. Assemble final steps (including simulated excluded loans with clean indicators)
+  // 7. Assemble final steps with exact payoff timelines and installment amounts
   let totalSuggestedDebtPayment = 0;
+  let maxMonthsToDebtFree = 1;
+
   const allocations: LoanAllocationStep[] = sortedLoans.map((loan, idx) => {
     const isExcluded = excludedLoanIds.has(loan.id);
     const principal = sanitizeCurrency(loan.principal);
@@ -304,6 +303,7 @@ export function calculateDebtAvalanche(
     const duration = loan.interestDurationMonths;
     const isOpenEnded = !duration || duration <= 0 || duration === null;
     const monthlyInterest = roundToTwoDecimals(principal * (rate / 100));
+    const userPriority = loan.priorityRank !== undefined && loan.priorityRank > 0 ? loan.priorityRank : idx + 1;
 
     if (isExcluded) {
       let monthlyTarget = 0;
@@ -331,10 +331,11 @@ export function calculateDebtAvalanche(
         totalSuggestedAllocation: 0,
         projectedRemainingDebt: leftToPay,
         willBeSettled: false,
-        priorityRank: idx + 1,
+        priorityRank: userPriority,
         status: loan.status,
         isSimulatedExcluded: true,
-        isPacingCapped: false,
+        monthsToPayoff: 0,
+        monthlyInstallmentAmount: monthlyTarget,
       };
     }
 
@@ -342,6 +343,22 @@ export function calculateDebtAvalanche(
     const totalAlloc = roundToTwoDecimals(p.minAllocation + p.extraAllocation);
     totalSuggestedDebtPayment += totalAlloc;
     const projectedRemaining = roundToTwoDecimals(Math.max(0, leftToPay - totalAlloc));
+
+    // Dynamic Payoff Timeline: exact months needed at this payment rate
+    let calculatedMonths = 1;
+    if (totalAlloc > 0) {
+      calculatedMonths = Math.max(1, Math.ceil(leftToPay / totalAlloc));
+    } else {
+      calculatedMonths = duration > 0 ? duration : 12;
+    }
+
+    if (calculatedMonths > maxMonthsToDebtFree) {
+      maxMonthsToDebtFree = calculatedMonths;
+    }
+
+    // Computed monthly installment: (Principal + Total Interest) / calculatedMonths
+    const totalLoanCost = sanitizeCurrency(loan.totalToRepay) || principal + monthlyInterest * calculatedMonths;
+    const installmentPerMonth = roundToTwoDecimals(totalLoanCost / (calculatedMonths || 1));
 
     return {
       loanId: loan.id,
@@ -359,20 +376,37 @@ export function calculateDebtAvalanche(
       totalSuggestedAllocation: totalAlloc,
       projectedRemainingDebt: projectedRemaining,
       willBeSettled: projectedRemaining <= 0,
-      priorityRank: idx + 1,
+      priorityRank: userPriority,
       status: loan.status,
       isSimulatedExcluded: false,
-      isPacingCapped: p.isCapped,
-      appliedPacingCap: pacingCapConfig.enabled ? pacingCapConfig.maxPerLoanAmount : undefined,
+      monthsToPayoff: calculatedMonths,
+      monthlyInstallmentAmount: installmentPerMonth,
     };
   });
 
   totalSuggestedDebtPayment = roundToTwoDecimals(totalSuggestedDebtPayment);
   const unallocatedCash = roundToTwoDecimals(availableFund);
 
+  // Real-time Net Cash Flow: totalInflow - committed essentials - total suggested debt payment - living buffer
+  const netCashFlow = roundToTwoDecimals(totalInflow - totalEssentials - totalSuggestedDebtPayment - livingBufferAmount);
+
+  // Compute estimated Debt-Free Date based on maxMonthsToDebtFree
+  const startParts = currentMonth.split('-');
+  let debtFreeYear = parseInt(startParts[0]) || 2026;
+  let debtFreeMonth = parseInt(startParts[1]) || 10;
+  debtFreeMonth += maxMonthsToDebtFree;
+  while (debtFreeMonth > 12) {
+    debtFreeMonth -= 12;
+    debtFreeYear += 1;
+  }
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const estimatedDebtFreeDate = `${monthNames[debtFreeMonth - 1]} ${debtFreeYear}`;
+
   return {
     monthYear: currentMonth,
     totalIncome,
+    incomeRollover,
+    totalInflow,
     totalEssentials,
     baseEssentialsAmount,
     arrearsAmount,
@@ -388,12 +422,14 @@ export function calculateDebtAvalanche(
     totalMinDebtObligation,
     totalSuggestedDebtPayment,
     unallocatedCash,
+    netCashFlow,
     isDeficit,
     allocations,
     activeLoansCount: includedLoans.length,
     simulatedExcludedCount,
     incomeSourcesCount: monthIncomes.length,
     essentialsCount: monthEssentials.length,
-    pacingCapConfig,
+    maxMonthsToDebtFree,
+    estimatedDebtFreeDate,
   };
 }

@@ -11,10 +11,13 @@ import {
   OtherSpending,
   MoneyLent,
   CreditCard,
+  SavingsTransaction,
+  RecurringBillTemplate,
 } from './types.ts';
 import { createBlankVault } from './data/initialRecords.ts';
 import { loadEncryptedVault, saveEncryptedVault, getInitialVaultFast, VAULT_PLAIN_STORAGE_KEY, VAULT_STORAGE_KEY } from './utils/cryptoVault.ts';
 import { runMathematicalAudit, autoReconcileVault } from './utils/mathAudit.ts';
+import { sanitizeCurrency } from './utils/numberSanitizer.ts';
 import { VaultLockScreen } from './components/VaultLockScreen.tsx';
 import { Navbar } from './components/Navbar.tsx';
 import { NetworkStatusBanner } from './components/NetworkStatusBanner.tsx';
@@ -23,6 +26,7 @@ import { Sidebar, ActiveTab, MobileBottomNav } from './components/Sidebar.tsx';
 import { DashboardView } from './components/DashboardView.tsx';
 import { LoansView } from './components/LoansView.tsx';
 import { RepaymentPlanView } from './components/RepaymentPlanView.tsx';
+import { SavingsVaultView } from './components/SavingsVaultView.tsx';
 import { IncomeLogView } from './components/IncomeLogView.tsx';
 import { EssentialsView } from './components/EssentialsView.tsx';
 import { PaymentsChargesView } from './components/PaymentsChargesView.tsx';
@@ -790,6 +794,111 @@ export default function App() {
     showToast(`Reconciliation complete: ${fixCount} formulas aligned with 0 errors.`);
   };
 
+  // 6b. Savings Vault Handler (Item 2)
+  const handleAddSavingsTransaction = (tx: SavingsTransaction) => {
+    const updatedTransactions = [...(vault.savingsTransactions || []), tx];
+    const updatedVaultData: FamilyVaultData = {
+      ...vault,
+      savingsTransactions: updatedTransactions,
+    };
+    if (tx.type === 'deposit') {
+      const charge: PaymentCharge = {
+        id: `pay-${Date.now()}`,
+        date: tx.date,
+        monthYear: tx.monthYear,
+        category: 'Savings Deposit',
+        targetId: tx.id,
+        targetName: 'Savings Vault Deposit',
+        amount: tx.amount,
+        paidByMemberId: tx.memberId || activeMember.id,
+        paymentMethod: 'Bank Transfer',
+        receiptNotes: tx.notes || 'Transferred to Savings Vault',
+      };
+      updatedVaultData.payments = [...vault.payments, charge];
+    }
+    updateVault(updatedVaultData);
+    showToast(
+      tx.type === 'deposit'
+        ? `Deposited AED ${tx.amount.toFixed(2)} into Savings Vault.`
+        : `Withdrew AED ${tx.amount.toFixed(2)} from Savings Vault.`
+    );
+  };
+
+  // 6c. Recurring Bill Templates Handlers (Item 11)
+  const handleSaveRecurringTemplate = (template: RecurringBillTemplate) => {
+    const existing = vault.recurringTemplates || [];
+    const index = existing.findIndex((t) => t.name.toLowerCase() === template.name.toLowerCase());
+    let updatedTemplates: RecurringBillTemplate[];
+    if (index >= 0) {
+      updatedTemplates = [...existing];
+      updatedTemplates[index] = template;
+    } else {
+      updatedTemplates = [...existing, template];
+    }
+    updateVault({ ...vault, recurringTemplates: updatedTemplates });
+    showToast(`Saved "${template.name}" as reusable recurring template.`);
+  };
+
+  const handleDeleteRecurringTemplate = (templateId: string) => {
+    const updatedTemplates = (vault.recurringTemplates || []).filter((t) => t.id !== templateId);
+    updateVault({ ...vault, recurringTemplates: updatedTemplates });
+    showToast('Removed template.');
+  };
+
+  const handleApplyRecurringTemplates = () => {
+    const templates = vault.recurringTemplates || [];
+    if (templates.length === 0) {
+      showToast('No saved templates found.');
+      return;
+    }
+    const currentBills = vault.essentials.filter((e) => e.monthYear === currentMonth);
+    const existingNames = new Set(currentBills.map((e) => e.name.toLowerCase().trim()));
+    const newBills: EssentialBill[] = [];
+
+    templates.forEach((tmpl) => {
+      if (!existingNames.has(tmpl.name.toLowerCase().trim())) {
+        const dayStr = String(Math.min(28, Math.max(1, tmpl.dueDateDay))).padStart(2, '0');
+        newBills.push({
+          id: `ess-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          monthYear: currentMonth,
+          name: tmpl.name,
+          category: tmpl.category,
+          amount: tmpl.amount,
+          dueDate: `${currentMonth}-${dayStr}`,
+          isRecurring: true,
+          status: 'Pending',
+          hasArrears: tmpl.hasArrears,
+          arrearsAmount: tmpl.arrearsAmount,
+          arrearsPaidSoFar: 0,
+          arrearsNotes: tmpl.notes,
+        });
+      }
+    });
+
+    if (newBills.length === 0) {
+      showToast('All standard recurring bills already exist for this month.');
+      return;
+    }
+
+    updateVault({
+      ...vault,
+      essentials: [...vault.essentials, ...newBills],
+    });
+    showToast(`Instantiated ${newBills.length} recurring bills from templates for ${currentMonth}!`);
+  };
+
+  // 6d. Income Rollover & Review Reminder Handlers (Items 5 & 6)
+  const handleUpdateRollover = (month: string, amount: number) => {
+    const updatedRollovers = { ...(vault.incomeRollovers || {}), [month]: sanitizeCurrency(amount) };
+    updateVault({ ...vault, incomeRollovers: updatedRollovers });
+    showToast(`Updated carried rollover for ${month} to AED ${amount.toFixed(2)}.`);
+  };
+
+  const handleDismissReminder = (month: string) => {
+    const updatedDismissed = [...new Set([...(vault.dismissedReminders || []), month])];
+    updateVault({ ...vault, dismissedReminders: updatedDismissed });
+  };
+
   // 7. Smart Document Scanner Application Handler
   const handleApplyExtractedData = (type: string, data: any) => {
     const today = data.detectedDate || new Date().toISOString().slice(0, 10);
@@ -971,6 +1080,8 @@ export default function App() {
               currentMonth={currentMonth}
               onNavigateTab={(tab) => setActiveTab(tab)}
               onOpenScanner={() => setIsScannerOpen(true)}
+              onDismissReminder={handleDismissReminder}
+              onUpdateRollover={handleUpdateRollover}
             />
           )}
 
@@ -998,6 +1109,17 @@ export default function App() {
             />
           )}
 
+          {activeTab === 'savings_vault' && (
+            <SavingsVaultView
+              savingsTransactions={vault.savingsTransactions || []}
+              currentMonth={currentMonth}
+              members={vault.members}
+              onAddTransaction={handleAddSavingsTransaction}
+              canEdit={canEdit}
+              surplusAvailable={availableMoneyThisMonth}
+            />
+          )}
+
           {activeTab === 'income' && (
             <IncomeLogView
               incomes={vault.incomes}
@@ -1015,11 +1137,15 @@ export default function App() {
               essentials={vault.essentials}
               currentMonth={currentMonth}
               members={vault.members}
+              templates={vault.recurringTemplates || []}
               onAddEssential={handleAddEssential}
               onUpdateEssential={handleUpdateEssential}
               onDeleteEssential={handleDeleteEssential}
               onMarkPaid={handleMarkEssentialPaid}
               onRecordArrearsPayment={handleRecordArrearsPayment}
+              onSaveTemplate={handleSaveRecurringTemplate}
+              onDeleteTemplate={handleDeleteRecurringTemplate}
+              onApplyTemplates={handleApplyRecurringTemplates}
               canEdit={canEdit}
               availableMoney={availableMoneyThisMonth}
             />

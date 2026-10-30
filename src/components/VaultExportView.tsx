@@ -6,6 +6,8 @@ import {
   Copy,
   Check,
   Upload,
+  Download,
+  FileJson,
 } from 'lucide-react';
 import { FamilyVaultData } from '../types.ts';
 import {
@@ -112,14 +114,100 @@ export const VaultExportView: React.FC<VaultExportViewProps> = ({
     reader.readAsText(file);
   };
 
+  const [jsonBackupSuccess, setJsonBackupSuccess] = useState<string | null>(null);
+
+  const handleDownloadHumanReadableJSON = () => {
+    try {
+      const cleanJSON = JSON.stringify(vault, null, 2);
+      const blob = new Blob([cleanJSON], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `family_wealth_vault_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      setJsonBackupSuccess('Exported clean human-readable JSON file successfully!');
+      setTimeout(() => setJsonBackupSuccess(null), 3500);
+    } catch (err: any) {
+      setImportError('Failed to generate readable JSON export: ' + err.message);
+    }
+  };
+
+  const handleJSONFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const text = reader.result as string;
+        const parsed = JSON.parse(text);
+        if (!parsed || !parsed.version || !Array.isArray(parsed.members)) {
+          throw new Error('Invalid vault file structure. Missing required version or members schema.');
+        }
+        onRestoreVault(parsed);
+        setJsonBackupSuccess('Successfully restored entire financial ledger from JSON file!');
+        setImportError(null);
+        setTimeout(() => setJsonBackupSuccess(null), 4000);
+      } catch (err: any) {
+        setImportError('Could not restore JSON file: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs">
         <h1 className="text-xl font-bold text-slate-900 dark:text-white">Data Export & End-to-End Encrypted Sync</h1>
         <p className="text-xs text-slate-500 mt-0.5">
-          Pure AED financial exports in PDF and CSV, alongside AES-GCM encrypted cross-device synchronization.
+          Pure AED financial exports in PDF, CSV, and human-readable JSON, alongside AES-GCM encrypted cross-device synchronization.
         </p>
+      </div>
+
+      {/* Human-Readable One-Click JSON Backup & Restore Card */}
+      <div className="p-6 bg-gradient-to-br from-indigo-50/70 via-white to-slate-50 dark:from-indigo-950/30 dark:via-slate-900 dark:to-slate-900 border border-indigo-200 dark:border-indigo-800/60 rounded-2xl space-y-4 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+              <FileJson className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>Human-Readable One-Click JSON Backup & Restore</span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-bold">
+                  JSON v1
+                </span>
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Export and inspect the entire financial ledger in indented, human-readable format, or upload a JSON backup to migrate records.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              onClick={handleDownloadHumanReadableJSON}
+              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition shadow-xs cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download Readable JSON</span>
+            </button>
+            {canEdit && (
+              <label className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl transition cursor-pointer">
+                <Upload className="w-3.5 h-3.5" />
+                <span>Import JSON Backup</span>
+                <input type="file" accept=".json" className="hidden" onChange={handleJSONFileUpload} />
+              </label>
+            )}
+          </div>
+        </div>
+
+        {jsonBackupSuccess && (
+          <div className="p-3 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 rounded-xl text-xs text-emerald-800 dark:text-emerald-200 flex items-center gap-2">
+            <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{jsonBackupSuccess}</span>
+          </div>
+        )}
       </div>
 
       {/* Export Section (Only PDF and CSV as required) */}
