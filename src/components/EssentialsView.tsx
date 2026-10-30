@@ -89,7 +89,6 @@ export const EssentialsView: React.FC<EssentialsViewProps> = ({
     const cleanAmount = sanitizeCurrency(editingBill.amount);
     const cleanArrears = editingBill.hasArrears ? sanitizeCurrency(editingBill.arrearsAmount) : 0;
     const cleanArrearsPaid = editingBill.hasArrears ? sanitizeCurrency(editingBill.arrearsPaidSoFar) : 0;
-
     onUpdateEssential({
       ...editingBill,
       name: editingBill.name.trim(),
@@ -110,7 +109,6 @@ export const EssentialsView: React.FC<EssentialsViewProps> = ({
     e.preventDefault();
     const cleanArrearsPay = sanitizeCurrency(payArrearsAmount);
     if (!arrearsBillTarget || cleanArrearsPay <= 0 || !onRecordArrearsPayment) return;
-
     onRecordArrearsPayment(
       arrearsBillTarget.id,
       cleanArrearsPay,
@@ -134,6 +132,7 @@ export const EssentialsView: React.FC<EssentialsViewProps> = ({
             Track mandatory family living expenses, housing, utilities, groceries, and historical arrears backlogs in AED.
           </p>
         </div>
+
         {canEdit && onAddEssential && (
           <button
             onClick={() => setIsAddModalOpen(true)}
@@ -158,6 +157,7 @@ export const EssentialsView: React.FC<EssentialsViewProps> = ({
             {essentials.length} active household bills
           </span>
         </div>
+
         <div className="p-4 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/50 dark:bg-amber-950/20 shadow-xs">
           <span className="text-xs font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
             <AlertCircle className="w-3.5 h-3.5" />
@@ -170,6 +170,7 @@ export const EssentialsView: React.FC<EssentialsViewProps> = ({
             Past dues awaiting repayment installments
           </span>
         </div>
+
         <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs">
           <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />

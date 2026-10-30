@@ -26,7 +26,6 @@ export const VaultLogo: React.FC<VaultLogoProps> = ({
       <div className={`relative ${currentSize.box} shrink-0 group`}>
         {/* Ambient Glow */}
         <div className="absolute -inset-0.5 bg-gradient-to-tr from-emerald-500 via-teal-400 to-indigo-500 rounded-xl blur-[3px] opacity-60 group-hover:opacity-90 transition-opacity" />
-
         {/* Outer Shield Box */}
         <div className="relative w-full h-full rounded-xl bg-slate-900 border border-emerald-400/30 flex items-center justify-center overflow-hidden shadow-lg shadow-emerald-950/40">
           <svg
@@ -50,7 +49,6 @@ export const VaultLogo: React.FC<VaultLogoProps> = ({
                 <feComposite in="SourceGraphic" in2="blur" operator="over" />
               </filter>
             </defs>
-
             {/* Hexagonal Shield Perimeter */}
             <path
               d="M50 8 L86 28 V72 L50 92 L14 72 V28 Z"
@@ -59,7 +57,6 @@ export const VaultLogo: React.FC<VaultLogoProps> = ({
               strokeLinejoin="round"
               fill="rgba(16, 185, 129, 0.08)"
             />
-
             {/* Inner Isometric Vault Facets */}
             <path
               d="M50 20 L78 36 V64 L50 80 L22 64 V36 Z"
@@ -69,17 +66,14 @@ export const VaultLogo: React.FC<VaultLogoProps> = ({
               fill="none"
               opacity="0.6"
             />
-
             {/* Central Cipher Key / Diamond Node */}
             <path
               d="M50 32 L66 48 L50 64 L34 48 Z"
               fill="url(#vaultGrad)"
               filter="url(#glow)"
             />
-
             {/* Inner Gold Spark Center */}
             <circle cx="50" cy="48" r="4.5" fill="url(#goldAccent)" />
-
             {/* Precision Micro Crosshairs */}
             <line x1="50" y1="12" x2="50" y2="24" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" />
             <line x1="50" y1="72" x2="50" y2="84" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" />
@@ -88,7 +82,6 @@ export const VaultLogo: React.FC<VaultLogoProps> = ({
           </svg>
         </div>
       </div>
-
       {/* Typography */}
       {showText && (
         <div className="flex flex-col">

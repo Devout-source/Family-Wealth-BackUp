@@ -26,7 +26,6 @@ export const SmartDocumentScannerModal: React.FC<SmartDocumentScannerModalProps>
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     setMimeType(file.type || 'image/jpeg');
     const reader = new FileReader();
     reader.onload = () => {
@@ -41,7 +40,6 @@ export const SmartDocumentScannerModal: React.FC<SmartDocumentScannerModalProps>
     if (!selectedImage) return;
     setIsScanning(true);
     setScanError(null);
-
     try {
       const response = await fetch('/api/ai/scan-document', {
         method: 'POST',
@@ -51,7 +49,6 @@ export const SmartDocumentScannerModal: React.FC<SmartDocumentScannerModalProps>
           mimeType,
         }),
       });
-
       const resJson = await response.json();
       if (!resJson.success) {
         throw new Error(resJson.error || 'Failed to analyze document');

@@ -4,6 +4,7 @@ import {
   Download,
   Pencil,
   Trash2,
+  X,
   TrendingDown,
   Activity,
 } from 'lucide-react';
@@ -122,6 +123,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
   const [purpose, setPurpose] = useState('PERSONAL');
   const [borrowedDate, setBorrowedDate] = useState(new Date().toISOString().slice(0, 10));
   const [principal, setPrincipal] = useState<number>(0);
+  const [isOpenEnded, setIsOpenEnded] = useState(false);
   const [durationMonths, setDurationMonths] = useState<number>(1);
   const [monthlyRatePct, setMonthlyRatePct] = useState<number>(5.0);
   const [finalDate, setFinalDate] = useState('');
@@ -135,20 +137,23 @@ export const LoansView: React.FC<LoansViewProps> = ({
 
   // Real-time calculation previews for new loan
   const calculatedMonthlyInterest = Math.round(principal * (monthlyRatePct / 100) * 100) / 100;
-  const calculatedTotalInterest = Math.round(calculatedMonthlyInterest * durationMonths * 100) / 100;
+  const calculatedTotalInterest = isOpenEnded
+    ? calculatedMonthlyInterest
+    : Math.round(calculatedMonthlyInterest * durationMonths * 100) / 100;
   const calculatedTotalToRepay = Math.round((principal + calculatedTotalInterest) * 100) / 100;
 
   const handleCreateLoan = (e: React.FormEvent) => {
     e.preventDefault();
     const cleanPrincipal = sanitizeCurrency(principal);
     const cleanRate = sanitizeCurrency(monthlyRatePct);
-    const cleanDuration = Math.max(1, Math.round(sanitizeCurrency(durationMonths)));
+    const cleanDuration = isOpenEnded ? 0 : Math.max(1, Math.round(sanitizeCurrency(durationMonths)));
+
     if (!lender.trim() || cleanPrincipal <= 0) return;
 
     const monthlyInterest = Math.round(cleanPrincipal * (cleanRate / 100) * 100) / 100;
-    const totalInterest = Math.round(monthlyInterest * cleanDuration * 100) / 100;
+    const totalInterest = isOpenEnded ? monthlyInterest : Math.round(monthlyInterest * cleanDuration * 100) / 100;
     const totalToRepay = Math.round((cleanPrincipal + totalInterest) * 100) / 100;
-    const plannedMonthly = Math.round((totalToRepay / cleanDuration) * 100) / 100;
+    const plannedMonthly = isOpenEnded ? monthlyInterest : Math.round((totalToRepay / (cleanDuration || 1)) * 100) / 100;
 
     const newLoan: LoanRecord = {
       id: `L${loans.length + 1}`,
@@ -171,18 +176,20 @@ export const LoansView: React.FC<LoansViewProps> = ({
       overdueAmount: 0,
       status: 'Active',
       notes: notes.trim(),
-      planSummary: `${cleanDuration} instalment(s) | total planned AED ${totalToRepay.toFixed(2)}`,
+      planSummary: isOpenEnded
+        ? `Open-ended duration | dynamic monthly interest AED ${monthlyInterest.toFixed(2)}`
+        : `${cleanDuration} instalment(s) | total planned AED ${totalToRepay.toFixed(2)}`,
     };
 
     onAddLoan(newLoan);
     setIsAddModalOpen(false);
-
     // Reset form
     setLender('');
     setPrincipal(0);
     setDueDate('');
     setFinalDate('');
     setNotes('');
+    setIsOpenEnded(false);
   };
 
   const handleSaveEditedLoan = (e: React.FormEvent) => {
@@ -191,12 +198,13 @@ export const LoansView: React.FC<LoansViewProps> = ({
 
     const cleanPrincipal = sanitizeCurrency(editingLoan.principal);
     const cleanRate = sanitizeCurrency(editingLoan.monthlyInterestRatePct);
-    const cleanDur = Math.max(1, Math.round(sanitizeCurrency(editingLoan.interestDurationMonths)));
+    const isOpenEndedLoan = !editingLoan.interestDurationMonths || editingLoan.interestDurationMonths <= 0;
+    const cleanDur = isOpenEndedLoan ? 0 : Math.round(sanitizeCurrency(editingLoan.interestDurationMonths));
     const cleanPaid = sanitizeCurrency(editingLoan.paidSoFar);
     const cleanPlanned = sanitizeCurrency(editingLoan.plannedPaymentThisMonth);
 
     const monthlyInt = Math.round(cleanPrincipal * (cleanRate / 100) * 100) / 100;
-    const totalInt = Math.round(monthlyInt * cleanDur * 100) / 100;
+    const totalInt = isOpenEndedLoan ? monthlyInt : Math.round(monthlyInt * cleanDur * 100) / 100;
     const totalRepay = Math.round((cleanPrincipal + totalInt) * 100) / 100;
     const left = Math.max(0, Math.round((totalRepay - cleanPaid) * 100) / 100);
 
@@ -206,7 +214,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
       monthlyInterestRatePct: cleanRate,
       interestDurationMonths: cleanDur,
       paidSoFar: cleanPaid,
-      plannedPaymentThisMonth: cleanPlanned || Math.round((totalRepay / cleanDur) * 100) / 100,
+      plannedPaymentThisMonth: cleanPlanned || (isOpenEndedLoan ? monthlyInt : Math.round((totalRepay / (cleanDur || 1)) * 100) / 100),
       monthlyInterestUsed: monthlyInt,
       totalInterestTerm: totalInt,
       totalToRepay: totalRepay,
@@ -359,6 +367,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
               const paidPct = loan.totalToRepay > 0 ? (loan.paidSoFar / loan.totalToRepay) * 100 : 0;
               const leftPct = 100 - paidPct;
               const isSettled = loan.leftToPay <= 0;
+
               const progressBarData = [
                 {
                   name: loan.lender,
@@ -528,6 +537,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
                         </AreaChart>
                       </ResponsiveContainer>
                     </div>
+
                     <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-800">
                       <span>Planned This Month: AED {loan.plannedPaymentThisMonth.toFixed(2)}</span>
                       <span>Next Due: {loan.dueDateThisPayment}</span>
@@ -610,7 +620,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
                           : 'text-indigo-600 dark:text-indigo-400'
                       }`}
                     >
-                      {isSettled ? 'Settled' : loan.status}
+                      • {isSettled ? 'Settled' : loan.status}
                     </span>
                   </td>
                   <td className="py-3 px-4 text-center font-sans">
@@ -665,7 +675,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
                 Edit Loan {editingLoan.id} ({editingLoan.lender})
               </h3>
               <button onClick={() => setEditingLoan(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
             <p className="text-xs text-slate-500">
@@ -965,21 +975,38 @@ export const LoansView: React.FC<LoansViewProps> = ({
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-slate-700 dark:text-slate-300 block mb-1">
-                    Duration (mo)
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="120"
-                    value={durationMonths}
-                    onChange={(e) => setDurationMonths(parseInt(e.target.value) || 1)}
-                    onBlur={() => setDurationMonths(Math.max(1, Math.round(sanitizeCurrency(durationMonths))))}
-                    className="w-full px-3 py-2 text-xs font-mono bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-white"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                      Duration
+                    </label>
+                    <label className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isOpenEnded}
+                        onChange={(e) => setIsOpenEnded(e.target.checked)}
+                        className="rounded text-emerald-600 focus:ring-emerald-500"
+                      />
+                      <span>Open-ended</span>
+                    </label>
+                  </div>
+                  {isOpenEnded ? (
+                    <div className="px-2.5 py-1.5 text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 rounded-lg border border-emerald-300 dark:border-emerald-800 truncate">
+                      Dynamic ({monthlyRatePct}% / mo)
+                    </div>
+                  ) : (
+                    <input
+                      type="number"
+                      min="1"
+                      max="120"
+                      value={durationMonths}
+                      onChange={(e) => setDurationMonths(parseInt(e.target.value) || 1)}
+                      onBlur={() => setDurationMonths(Math.max(1, Math.round(sanitizeCurrency(durationMonths))))}
+                      className="w-full px-3 py-2 text-xs font-mono bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-white"
+                      placeholder="e.g. 5"
+                    />
+                  )}
                 </div>
               </div>
-
               {/* Real-time Calculation Preview Card */}
               <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 rounded-lg space-y-1.5 text-xs font-mono">
                 <span className="font-sans font-semibold text-emerald-800 dark:text-emerald-300 block text-[11px]">
@@ -990,7 +1017,7 @@ export const LoansView: React.FC<LoansViewProps> = ({
                   <span className="font-semibold text-slate-900 dark:text-white">AED {calculatedMonthlyInterest.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                  <span>Total Interest for {durationMonths} month(s):</span>
+                  <span>{isOpenEnded ? 'Dynamic Interest Target:' : `Total Interest for ${durationMonths} month(s):`}</span>
                   <span className="font-semibold text-amber-600 dark:text-amber-400">AED {calculatedTotalInterest.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-slate-700 dark:text-slate-200 pt-1 border-t border-emerald-200 dark:border-emerald-800">
@@ -998,7 +1025,6 @@ export const LoansView: React.FC<LoansViewProps> = ({
                   <span className="font-bold text-emerald-700 dark:text-emerald-300">AED {calculatedTotalToRepay.toFixed(2)}</span>
                 </div>
               </div>
-
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="text-xs font-medium text-slate-700 dark:text-slate-300 block mb-1">
@@ -1034,7 +1060,6 @@ export const LoansView: React.FC<LoansViewProps> = ({
                   />
                 </div>
               </div>
-
               <div>
                 <label className="text-xs font-medium text-slate-700 dark:text-slate-300 block mb-1">
                   Agreement Notes
@@ -1047,7 +1072,6 @@ export const LoansView: React.FC<LoansViewProps> = ({
                   className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-white"
                 />
               </div>
-
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"

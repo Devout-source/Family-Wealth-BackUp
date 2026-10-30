@@ -54,7 +54,6 @@ export const AiAdvisorView: React.FC<AiAdvisorViewProps> = ({ vault, currentMont
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
   const initialWelcomeText = `Hello! I am your Family Wealth & Debt Vault AI Advisor. I have full real-time access to your family's numbers in UAE Dirhams (AED):
-
 • Active Personal Loans Owed: AED ${totalDebtLoans.toLocaleString('en-US', { minimumFractionDigits: 2 })} (Janaka: AED ${vault.loans.find(l => l.id === 'L1')?.leftToPay.toFixed(2) || '3,199.91'}, Kalu: AED ${vault.loans.find(l => l.id === 'L2')?.leftToPay.toFixed(2) || '2,150.00'})
 • Credit Card Statement Balances: AED ${totalCreditCardBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })} (Combined Debt: AED ${combinedTotalDebt.toLocaleString('en-US', { minimumFractionDigits: 2 })})
 • Monthly Total Income: AED ${totalIncome.toLocaleString('en-US', { minimumFractionDigits: 2 })}
@@ -175,6 +174,7 @@ You can ask me any question regarding your debts, why your loan debt is ~5.3k vs
       } else {
         fallbackText = `### Financial Snapshot & Recommendation (AED)\n\n• **Total Family Monthly Income:** AED ${totalIncome.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n• **Active Loan Debt:** AED ${totalDebtLoans.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n• **Monthly Planned Repayments:** AED ${monthlyPlannedLoans.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n• **Available Free Monthly Surplus:** AED ${freeSurplus.toLocaleString('en-US', { minimumFractionDigits: 2 })}\n\n**Priority Action:** Pay down **KALU (L2)** first due to the higher 7.5% interest rate, while continuing the planned AED 640.00 installment for **JANAKA (L1)**. This saves maximum interest while keeping your AED ${freeSurplus.toFixed(2)} emergency buffer intact!`;
       }
+
       const fallbackMsg: ChatMessage = {
         id: `bot-fallback-${Date.now()}`,
         role: 'assistant',
@@ -231,6 +231,7 @@ You can ask me any question regarding your debts, why your loan debt is ~5.3k vs
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ month: currentMonth, snapshot }),
       });
+
       const resJson = await res.json();
       if (!resJson.success) {
         throw new Error(resJson.error || 'Failed to generate financial plan');
@@ -262,6 +263,7 @@ You can ask me any question regarding your debts, why your loan debt is ~5.3k vs
           totalDebt: totalDebtLoans,
         }),
       });
+
       const resJson = await res.json();
       if (!resJson.success) {
         throw new Error(resJson.error || 'Failed to simulate purchase');
@@ -519,7 +521,6 @@ You can ask me any question regarding your debts, why your loan debt is ~5.3k vs
                 </div>
               );
             })}
-
             {isAsking && (
               <div className="flex items-start gap-3">
                 <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">

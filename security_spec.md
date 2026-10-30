@@ -10,6 +10,8 @@
 7. **Audit & Log Immutability**: Subcollection activity logs `/vaults/{vaultId}/logs/{logId}` can be appended with valid structure but cannot be modified or forged once written.
 8. **Administrative Boundaries**: Hard deletion of a family vault document is restricted to the verified family administrator (`bluephoenixgamer123@gmail.com`).
 
+---
+
 ## 2. The "Dirty Dozen" Attack Payloads (Must Return PERMISSION_DENIED)
 1. **Unauthenticated Read**: Attempting to `get` `/vaults/primary` without an active auth token.
 2. **Unauthenticated Write**: Attempting to `create` `/vaults/primary` without an active auth token.

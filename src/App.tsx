@@ -12,7 +12,7 @@ import {
   MoneyLent,
   CreditCard,
 } from './types.ts';
-import { createBlankVault, initialFamilyVault } from './data/initialRecords.ts';
+import { createBlankVault } from './data/initialRecords.ts';
 import { loadEncryptedVault, saveEncryptedVault, getInitialVaultFast, VAULT_PLAIN_STORAGE_KEY, VAULT_STORAGE_KEY } from './utils/cryptoVault.ts';
 import { runMathematicalAudit, autoReconcileVault } from './utils/mathAudit.ts';
 import { VaultLockScreen } from './components/VaultLockScreen.tsx';
@@ -34,7 +34,6 @@ import { SmartDocumentScannerModal } from './components/SmartDocumentScannerModa
 import { QuickNumbersManagerModal } from './components/QuickNumbersManagerModal.tsx';
 import { PrintableStatement } from './components/PrintableStatement.tsx';
 import { InstallAppModal } from './components/InstallAppModal.tsx';
-import { ToastContainer, ToastItem } from './components/ToastContainer.tsx';
 import { 
   testFirestoreConnection, 
   listenToFamilyVault, 
@@ -48,18 +47,12 @@ import type { User } from 'firebase/auth';
 export default function App() {
   const [vault, setVault] = useState<FamilyVaultData>(() => {
     const cached = getInitialVaultFast();
-    return (cached && cached.members && cached.members.length > 0) ? cached : initialFamilyVault;
+    return cached || createBlankVault();
   });
-  const [isLocked, setIsLocked] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('family_vault_locked') === 'true';
-    } catch {
-      return false;
-    }
-  });
+  const [isLocked, setIsLocked] = useState<boolean>(true);
   const [activeMember, setActiveMember] = useState<FamilyMember>(() => {
     const cached = getInitialVaultFast();
-    return (cached && cached.members && cached.members[0]) || initialFamilyVault.members[0];
+    return (cached && cached.members && cached.members[0]) || createBlankVault().members[0];
   });
   const [currentMonth, setCurrentMonth] = useState<string>('2026-10');
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
@@ -73,38 +66,22 @@ export default function App() {
     }
     return typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
-
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isQuickNumbersModalOpen, setIsQuickNumbersModalOpen] = useState(false);
   const [isInstallAppModalOpen, setIsInstallAppModalOpen] = useState(false);
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [firestoreSyncStatus, setFirestoreSyncStatus] = useState<'connected' | 'connecting' | 'offline'>('offline');
   const [isVaultLoading, setIsVaultLoading] = useState<boolean>(false);
   const isCloudSyncInitialized = useRef<boolean>(false);
   const unsubVaultRef = useRef<(() => void) | null>(null);
-
   const [authGuideModal, setAuthGuideModal] = useState<{
     isOpen: boolean;
     title: string;
     message: string;
     consoleUrl: string;
   } | null>(null);
-
-  const addToast = (type: 'success' | 'error' | 'info', message: string, actionLabel?: string, onAction?: () => void) => {
-    const id = `toast-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const newToast: ToastItem = { id, type, message, actionLabel, onAction };
-    setToasts((prev) => [...prev, newToast]);
-    const duration = type === 'error' ? 6000 : 3000;
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, duration);
-  };
-
-  const dismissToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
 
   // Sync dark mode class on <html> and persist
   useEffect(() => {
@@ -121,14 +98,14 @@ export default function App() {
     }
   }, [isDarkMode]);
 
-  // Global Network Connectivity Monitor
+  // Global Network Connectivity Monitor with sticky toast indicators
   useEffect(() => {
     const handleOnline = () => {
-      addToast('success', 'Internet connection restored. Real-time sync resumed.');
+      showToast('Internet connection restored. Real-time sync resumed.');
       setFirestoreSyncStatus('connected');
     };
     const handleOffline = () => {
-      addToast('error', 'Internet connection dropped. Real-time syncing paused. Edits saved locally.');
+      showToast('Internet connection dropped. Real-time syncing paused. Edits saved locally.');
       setFirestoreSyncStatus('offline');
     };
     window.addEventListener('online', handleOnline);
@@ -151,7 +128,6 @@ export default function App() {
             stored.members = createBlankVault().members;
             needsSave = true;
           }
-
           // Remove legacy birth year PINs (1975, 1981, 2004, 2008, 2012)
           stored.members = stored.members.map((m) => {
             if (['1975', '1981', '2004', '2008', '2012'].includes(m.pin)) {
@@ -181,8 +157,8 @@ export default function App() {
           if (needsSave) {
             await saveEncryptedVault(stored);
           }
-
           setVault(stored);
+
           // Default to Devout ("me") or Sampath
           const devout = stored.members.find((m) => m.name === 'Devout');
           if (devout) setActiveMember(devout);
@@ -233,7 +209,7 @@ export default function App() {
             isCloudSyncInitialized.current = true;
             setIsVaultLoading(false);
             setFirestoreSyncStatus('connecting');
-            addToast('error', 'Cloud connection notice: Sync connecting. Edits securely stored locally.');
+            showToast('Cloud connection notice: Sync connecting. Edits securely stored locally.');
           },
           () => {
             // Fresh or empty cloud database for authenticated user:
@@ -247,7 +223,7 @@ export default function App() {
               localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(blankVault));
             } catch {}
             saveVaultToFirestore(blankVault);
-            addToast('success', 'Initialized new encrypted family ledger in Firestore.');
+            showToast('Initialized new encrypted family ledger in Firestore.');
           }
         );
       } else {
@@ -284,7 +260,7 @@ export default function App() {
     try {
       const user = await signInWithGoogleAccount();
       if (user) {
-        addToast('success', 'Signed in with Google! Firebase real-time sync active.');
+        showToast('Signed in with Google! Firebase real-time sync active.');
       }
     } catch (err: any) {
       if (err?.code === 'auth/configuration-not-found' || err?.code === 'auth/operation-not-allowed') {
@@ -306,7 +282,7 @@ export default function App() {
         return;
       }
       if (err?.code !== 'auth/popup-closed-by-user' && err?.code !== 'auth/cancelled-popup-request') {
-        addToast('error', err?.message || 'Failed to sign in with Google');
+        showToast(err?.message || 'Failed to sign in with Google');
       }
     }
   };
@@ -321,9 +297,9 @@ export default function App() {
       await signOutFromFirebase();
       setFirebaseUser(null);
       setFirestoreSyncStatus('offline');
-      addToast('info', 'Signed out of Firebase. Vault running in local mode.');
+      showToast('Signed out of Firebase. Vault running in local mode.');
     } catch (err: any) {
-      addToast('error', err?.message || 'Failed to sign out');
+      showToast(err?.message || 'Failed to sign out');
     }
   };
 
@@ -334,16 +310,16 @@ export default function App() {
     try {
       const result = await saveEncryptedVault(newVault);
       if (!result.cloudSynced && result.error && firebaseUser) {
-        addToast(
-          'error',
-          `Cloud Sync Alert: ${result.error}. Saved locally.`,
-          'Retry Cloud Sync',
-          () => saveVaultToFirestore(newVault)
-        );
+        showToast(`Cloud Sync Alert: ${result.error}. Saved locally.`);
       }
     } catch (err: any) {
-      addToast('error', `Database write error: ${err?.message || 'Failed to save'}. Saved locally.`);
+      showToast(`Database write error: ${err?.message || 'Failed to save'}. Saved locally.`);
     }
+  };
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
   };
 
   // Run mathematical audit continuously
@@ -385,25 +361,42 @@ export default function App() {
     const [startYear, startMonth] = newLoan.borrowedDate.split('-');
     let currentY = parseInt(startYear) || 2026;
     let currentM = parseInt(startMonth) || 10;
-    const installmentAmount = Math.round((newLoan.totalToRepay / (newLoan.interestDurationMonths || 1)) * 100) / 100;
+    const duration = newLoan.interestDurationMonths && newLoan.interestDurationMonths > 0 ? newLoan.interestDurationMonths : 0;
 
-    for (let i = 1; i <= newLoan.interestDurationMonths; i++) {
+    if (duration > 0) {
+      const installmentAmount = Math.round((newLoan.totalToRepay / duration) * 100) / 100;
+      for (let i = 1; i <= duration; i++) {
+        const monthStr = `${currentY}-${String(currentM).padStart(2, '0')}`;
+        newInstallments.push({
+          id: `inst-${newLoan.id}-${i}-${Date.now()}`,
+          loanId: newLoan.id,
+          lender: newLoan.lender,
+          monthYear: monthStr,
+          installmentNumber: i,
+          plannedAmount: installmentAmount,
+          dueDate: `${monthStr}-06`,
+          status: 'Pending',
+        });
+        currentM += 1;
+        if (currentM > 12) {
+          currentM = 1;
+          currentY += 1;
+        }
+      }
+    } else {
+      // Open-ended / null duration: generate dynamic monthly interest target instalment
+      const monthlyInt = Math.round(newLoan.principal * (newLoan.monthlyInterestRatePct / 100) * 100) / 100;
       const monthStr = `${currentY}-${String(currentM).padStart(2, '0')}`;
       newInstallments.push({
-        id: `inst-${newLoan.id}-${i}-${Date.now()}`,
+        id: `inst-${newLoan.id}-dynamic-${Date.now()}`,
         loanId: newLoan.id,
         lender: newLoan.lender,
         monthYear: monthStr,
-        installmentNumber: i,
-        plannedAmount: installmentAmount,
+        installmentNumber: 1,
+        plannedAmount: monthlyInt > 0 ? monthlyInt : newLoan.totalToRepay,
         dueDate: `${monthStr}-06`,
         status: 'Pending',
       });
-      currentM += 1;
-      if (currentM > 12) {
-        currentM = 1;
-        currentY += 1;
-      }
     }
 
     const updated: FamilyVaultData = {
@@ -412,14 +405,14 @@ export default function App() {
       installments: [...vault.installments, ...newInstallments],
     };
     updateVault(updated);
-    addToast('success', `Loan ${newLoan.id} (${newLoan.lender}) added.`);
+    showToast(`Loan ${newLoan.id} (${newLoan.lender}) added.`);
   };
 
   const handleUpdateLoan = (updatedLoan: LoanRecord) => {
     const updatedLoans = vault.loans.map((l) => (l.id === updatedLoan.id ? updatedLoan : l));
     const updated: FamilyVaultData = { ...vault, loans: updatedLoans };
     updateVault(updated);
-    addToast('success', `Updated loan ${updatedLoan.id} (${updatedLoan.lender}).`);
+    showToast(`Updated loan ${updatedLoan.id} (${updatedLoan.lender}).`);
   };
 
   const handleDeleteLoan = (loanId: string) => {
@@ -431,7 +424,7 @@ export default function App() {
       installments: updatedInstallments,
     };
     updateVault(updated);
-    addToast('success', `Deleted loan ${loanId}.`);
+    showToast(`Deleted loan ${loanId}.`);
   };
 
   const handleRecordLoanPayment = (
@@ -477,7 +470,7 @@ export default function App() {
       payments: [newPayment, ...vault.payments],
     };
     updateVault(updated);
-    addToast('success', `Recorded payment of AED ${amount.toFixed(2)} for ${loan.lender}.`);
+    showToast(`Recorded payment of AED ${amount.toFixed(2)} for ${loan.lender}.`);
   };
 
   const handleMarkInstallmentPaid = (installmentId: string, paidAmount: number, paymentMethod: string) => {
@@ -531,7 +524,7 @@ export default function App() {
       payments: [newPayment, ...vault.payments],
     };
     updateVault(updated);
-    addToast('success', `Instalment #${inst.installmentNumber} for ${inst.lender} marked paid.`);
+    showToast(`Instalment #${inst.installmentNumber} for ${inst.lender} marked paid.`);
   };
 
   // 2. Handlers for Incomes
@@ -541,21 +534,21 @@ export default function App() {
       incomes: [income, ...vault.incomes],
     };
     updateVault(updated);
-    addToast('success', `Added income: AED ${income.actualAmount.toFixed(2)}.`);
+    showToast(`Added income: AED ${income.actualAmount.toFixed(2)}.`);
   };
 
   const handleUpdateIncome = (income: IncomeEntry) => {
     const updatedIncomes = vault.incomes.map((i) => (i.id === income.id ? income : i));
     const updated: FamilyVaultData = { ...vault, incomes: updatedIncomes };
     updateVault(updated);
-    addToast('success', `Updated income for ${income.source}.`);
+    showToast(`Updated income for ${income.source}.`);
   };
 
   const handleDeleteIncome = (incomeId: string) => {
     const updatedIncomes = vault.incomes.filter((i) => i.id !== incomeId);
     const updated: FamilyVaultData = { ...vault, incomes: updatedIncomes };
     updateVault(updated);
-    addToast('success', 'Deleted income entry.');
+    showToast('Deleted income entry.');
   };
 
   // 3. Handlers for Essentials
@@ -565,21 +558,21 @@ export default function App() {
       essentials: [bill, ...vault.essentials],
     };
     updateVault(updated);
-    addToast('success', `Added bill: ${bill.name} (AED ${bill.amount.toFixed(2)}).`);
+    showToast(`Added bill: ${bill.name} (AED ${bill.amount.toFixed(2)}).`);
   };
 
   const handleUpdateEssential = (bill: EssentialBill) => {
     const updatedEssentials = vault.essentials.map((e) => (e.id === bill.id ? bill : e));
     const updated: FamilyVaultData = { ...vault, essentials: updatedEssentials };
     updateVault(updated);
-    addToast('success', `Updated bill ${bill.name}.`);
+    showToast(`Updated bill ${bill.name}.`);
   };
 
   const handleDeleteEssential = (billId: string) => {
     const updatedEssentials = vault.essentials.filter((e) => e.id !== billId);
     const updated: FamilyVaultData = { ...vault, essentials: updatedEssentials };
     updateVault(updated);
-    addToast('success', 'Deleted essential bill.');
+    showToast('Deleted essential bill.');
   };
 
   const handleMarkEssentialPaid = (billId: string, paidDate: string) => {
@@ -617,7 +610,7 @@ export default function App() {
       payments: [newPayment, ...vault.payments],
     };
     updateVault(updated);
-    addToast('success', `Settled ${bill.name} (AED ${bill.amount.toFixed(2)}).`);
+    showToast(`Settled ${bill.name} (AED ${bill.amount.toFixed(2)}).`);
   };
 
   const handleRecordArrearsPayment = (
@@ -659,7 +652,7 @@ export default function App() {
       payments: [newPayment, ...vault.payments],
     };
     updateVault(updated);
-    addToast('success', `Recorded arrears payment of AED ${amount.toFixed(2)} for ${bill.name}.`);
+    showToast(`Recorded arrears payment of AED ${amount.toFixed(2)} for ${bill.name}.`);
   };
 
   // 4. Handlers for Payments & Other
@@ -669,19 +662,19 @@ export default function App() {
       payments: [payment, ...vault.payments],
     };
     updateVault(updated);
-    addToast('success', `Recorded charge of AED ${payment.amount.toFixed(2)}.`);
+    showToast(`Recorded charge of AED ${payment.amount.toFixed(2)}.`);
   };
 
   const handleUpdatePayment = (payment: PaymentCharge) => {
     const updated = vault.payments.map((p) => (p.id === payment.id ? payment : p));
     updateVault({ ...vault, payments: updated });
-    addToast('success', `Updated payment of AED ${payment.amount.toFixed(2)}.`);
+    showToast(`Updated payment of AED ${payment.amount.toFixed(2)}.`);
   };
 
   const handleDeletePayment = (paymentId: string) => {
     const updated = vault.payments.filter((p) => p.id !== paymentId);
     updateVault({ ...vault, payments: updated });
-    addToast('success', 'Deleted payment record.');
+    showToast('Deleted payment record.');
   };
 
   const handleUpdateCreditCardBalance = (cardId: string, newBalance: number) => {
@@ -693,27 +686,27 @@ export default function App() {
     });
     const updated: FamilyVaultData = { ...vault, creditCards: updatedCards };
     updateVault(updated);
-    addToast('success', `Updated credit card statement balance to AED ${newBalance.toFixed(2)}.`);
+    showToast(`Updated credit card statement balance to AED ${newBalance.toFixed(2)}.`);
   };
 
   const handleUpdateCreditCard = (card: CreditCard) => {
     const updatedCards = vault.creditCards.map((c) => (c.id === card.id ? card : c));
     const updated: FamilyVaultData = { ...vault, creditCards: updatedCards };
     updateVault(updated);
-    addToast('success', `Updated card ${card.cardName}.`);
+    showToast(`Updated card ${card.cardName}.`);
   };
 
   const handleDeleteCreditCard = (cardId: string) => {
     const updatedCards = vault.creditCards.filter((c) => c.id !== cardId);
     const updated: FamilyVaultData = { ...vault, creditCards: updatedCards };
     updateVault(updated);
-    addToast('success', 'Deleted credit card.');
+    showToast('Deleted credit card.');
   };
 
   const handleAddCreditCard = (card: CreditCard) => {
     const updated: FamilyVaultData = { ...vault, creditCards: [...vault.creditCards, card] };
     updateVault(updated);
-    addToast('success', `Added ${card.cardName}.`);
+    showToast(`Added ${card.cardName}.`);
   };
 
   const handleAddOtherSpending = (item: OtherSpending) => {
@@ -722,19 +715,19 @@ export default function App() {
       otherSpending: [item, ...vault.otherSpending],
     };
     updateVault(updated);
-    addToast('success', `Recorded ${item.description} (AED ${item.amount.toFixed(2)}).`);
+    showToast(`Recorded ${item.description} (AED ${item.amount.toFixed(2)}).`);
   };
 
   const handleUpdateOtherSpending = (item: OtherSpending) => {
     const updated = vault.otherSpending.map((s) => (s.id === item.id ? item : s));
     updateVault({ ...vault, otherSpending: updated });
-    addToast('success', `Updated expense ${item.description}.`);
+    showToast(`Updated expense ${item.description}.`);
   };
 
   const handleDeleteOtherSpending = (spendId: string) => {
     const updated = vault.otherSpending.filter((s) => s.id !== spendId);
     updateVault({ ...vault, otherSpending: updated });
-    addToast('success', 'Deleted expense.');
+    showToast('Deleted expense.');
   };
 
   const handleAddMoneyLent = (item: MoneyLent) => {
@@ -743,19 +736,19 @@ export default function App() {
       moneyLent: [item, ...vault.moneyLent],
     };
     updateVault(updated);
-    addToast('success', `Recorded loan to ${item.borrower} (AED ${item.principal.toFixed(2)}).`);
+    showToast(`Recorded loan to ${item.borrower} (AED ${item.principal.toFixed(2)}).`);
   };
 
   const handleUpdateMoneyLent = (item: MoneyLent) => {
     const updated = vault.moneyLent.map((m) => (m.id === item.id ? item : m));
     updateVault({ ...vault, moneyLent: updated });
-    addToast('success', `Updated loan terms for ${item.borrower}.`);
+    showToast(`Updated loan terms for ${item.borrower}.`);
   };
 
   const handleDeleteMoneyLent = (lentId: string) => {
     const updated = vault.moneyLent.filter((m) => m.id !== lentId);
     updateVault({ ...vault, moneyLent: updated });
-    addToast('success', 'Deleted record.');
+    showToast('Deleted record.');
   };
 
   const handleRecordLentRepayment = (lentId: string, amount: number) => {
@@ -774,7 +767,7 @@ export default function App() {
     });
     const updated: FamilyVaultData = { ...vault, moneyLent: updatedLent };
     updateVault(updated);
-    addToast('success', `Recorded AED ${amount.toFixed(2)} received from borrower.`);
+    showToast(`Recorded AED ${amount.toFixed(2)} received from borrower.`);
   };
 
   // 5. Member PIN Updater
@@ -784,14 +777,17 @@ export default function App() {
     );
     const updated: FamilyVaultData = { ...vault, members: updatedMembers };
     updateVault(updated);
-    addToast('success', 'Confidential PIN successfully saved to vault.');
+    if (activeMember && activeMember.id === memberId) {
+      setActiveMember({ ...activeMember, pin: newPin });
+    }
+    showToast('Confidential PIN successfully saved to vault.');
   };
 
   // 6. Auto Reconcile Handler
   const handleAutoReconcile = () => {
     const { updatedVault, fixCount } = autoReconcileVault(vault);
     updateVault(updatedVault);
-    addToast('success', `Reconciliation complete: ${fixCount} formulas aligned with 0 errors.`);
+    showToast(`Reconciliation complete: ${fixCount} formulas aligned with 0 errors.`);
   };
 
   // 7. Smart Document Scanner Application Handler
@@ -890,8 +886,8 @@ export default function App() {
     }
   };
 
-  // While verifying and synchronizing authoritative cloud vault, display clean skeleton loader only if no data is present yet
-  if (isVaultLoading && (!vault || !vault.members || vault.members.length === 0)) {
+  // While verifying and synchronizing authoritative cloud vault, display clean loading state
+  if (isVaultLoading) {
     return (
       <div className="min-h-screen w-full bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6 text-center space-y-4">
         <div className="w-12 h-12 rounded-2xl bg-emerald-600/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center animate-pulse border border-emerald-500/30">
@@ -993,8 +989,11 @@ export default function App() {
             <RepaymentPlanView
               installments={vault.installments}
               loans={vault.loans}
+              incomes={vault.incomes}
+              essentials={vault.essentials}
               currentMonth={currentMonth}
               onMarkPaid={handleMarkInstallmentPaid}
+              onRecordLoanPayment={handleRecordLoanPayment}
               canEdit={canEdit}
             />
           )}
@@ -1119,7 +1118,7 @@ export default function App() {
               issues={auditIssues}
               onAutoReconcile={handleAutoReconcile}
               onRefreshScan={() => {
-                addToast('info', 'Re-scanned all equations and invariants.');
+                showToast('Re-scanned all equations and invariants.');
               }}
               canEdit={canEdit}
             />
@@ -1130,7 +1129,7 @@ export default function App() {
               vault={vault}
               onRestoreVault={(restored) => {
                 updateVault(restored);
-                addToast('success', 'Vault restored and synchronized successfully!');
+                showToast('Vault restored and synchronized successfully!');
               }}
               canEdit={canEdit}
             />
@@ -1165,7 +1164,7 @@ export default function App() {
         currentMonth={currentMonth}
         onApplyCustomBaseline={(newVault) => {
           updateVault(newVault);
-          addToast('success', 'Updated family numbers applied across all sheets.');
+          showToast('Updated family numbers applied across all sheets.');
         }}
       />
 
@@ -1244,8 +1243,12 @@ export default function App() {
         </div>
       )}
 
-      {/* Write-Verification & Error Alerts Toast Container */}
-      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-5 right-5 z-50 px-4 py-2.5 bg-slate-900 text-white text-xs font-medium rounded-xl shadow-xl border border-slate-700/60 animate-in fade-in slide-in-from-bottom-2 duration-200">
+          {toastMessage}
+        </div>
+      )}
     </div>
   );
 }

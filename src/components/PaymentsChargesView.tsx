@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { Plus, Download, Pencil, Trash2, X } from 'lucide-react';
 import { PaymentCharge, FamilyMember } from '../types.ts';
 import { exportPaymentsCSV } from '../utils/exportTools.ts';
-import { ConfirmDeleteModal } from './ConfirmDeleteModal.tsx';
 import { sanitizeCurrency } from '../utils/numberSanitizer.ts';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal.tsx';
 
 interface PaymentsChargesViewProps {
   payments: PaymentCharge[];
@@ -49,7 +49,6 @@ export const PaymentsChargesView: React.FC<PaymentsChargesViewProps> = ({
     e.preventDefault();
     const cleanAmount = sanitizeCurrency(amount);
     if (!targetName.trim() || cleanAmount <= 0) return;
-
     const newPayment: PaymentCharge = {
       id: `pay-${Date.now()}`,
       date,
@@ -62,7 +61,6 @@ export const PaymentsChargesView: React.FC<PaymentsChargesViewProps> = ({
       paymentMethod,
       receiptNotes: receiptNotes.trim(),
     };
-
     onAddPayment(newPayment);
     setIsModalOpen(false);
     setTargetName('');
@@ -74,7 +72,6 @@ export const PaymentsChargesView: React.FC<PaymentsChargesViewProps> = ({
     e.preventDefault();
     if (!editingPayment || !onUpdatePayment) return;
     const cleanAmount = sanitizeCurrency(editingPayment.amount);
-
     onUpdatePayment({
       ...editingPayment,
       targetName: editingPayment.targetName.trim(),
@@ -225,7 +222,7 @@ export const PaymentsChargesView: React.FC<PaymentsChargesViewProps> = ({
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">Record Outflow / Charge</h3>
               <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
             <form onSubmit={handleSubmit} className="space-y-3.5">
@@ -357,7 +354,7 @@ export const PaymentsChargesView: React.FC<PaymentsChargesViewProps> = ({
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">Edit Payment Entry</h3>
               <button onClick={() => setEditingPayment(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
             <form onSubmit={handleSaveEdit} className="space-y-3.5">

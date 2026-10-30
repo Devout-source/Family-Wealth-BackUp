@@ -117,7 +117,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             Pure AED accounting across 5 family sub-accounts and personal loans
           </p>
         </div>
-
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto shrink-0">
           <button
             onClick={onOpenScanner}

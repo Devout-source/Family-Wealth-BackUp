@@ -36,6 +36,7 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setCurrentUrl(window.location.href);
+
       const standalone =
         window.matchMedia('(display-mode: standalone)').matches ||
         (window.navigator as any).standalone === true;
@@ -53,6 +54,7 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({
         e.preventDefault();
         setDeferredPrompt(e);
       };
+
       window.addEventListener('beforeinstallprompt', handleBeforeInstall);
       return () => {
         window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
@@ -231,6 +233,7 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({
                       {copied ? 'Copied!' : 'Copy'}
                     </button>
                   </div>
+
                   <div className="p-3 bg-slate-100 dark:bg-slate-800/80 rounded-xl text-xs space-y-1.5 text-slate-600 dark:text-slate-300">
                     <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                       <Share2 className="w-3.5 h-3.5 text-emerald-500" />
@@ -276,7 +279,7 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({
                   <div className="text-xs">
                     <p className="font-semibold text-slate-900 dark:text-white">Tap the Share Button</p>
                     <p className="text-slate-500 dark:text-slate-400 text-[11px]">
-                      At the bottom center of the Safari screen, tap the <strong>Share</strong> button (the square icon with an arrow pointing up).
+                      At the bottom center of the Safari screen, tap the <strong>Share</strong> button (the square icon with an arrow pointing up ⎋).
                     </p>
                   </div>
                 </div>
@@ -288,7 +291,7 @@ export const InstallAppModal: React.FC<InstallAppModalProps> = ({
                   <div className="text-xs">
                     <p className="font-semibold text-slate-900 dark:text-white">Tap "Add to Home Screen"</p>
                     <p className="text-slate-500 dark:text-slate-400 text-[11px]">
-                      Scroll down the options list and tap <strong>Add to Home Screen [+]</strong>.
+                      Scroll down the options list and tap <strong>Add to Home Screen ➕</strong>.
                     </p>
                   </div>
                 </div>
@@ -571,7 +574,7 @@ VITE_FIREBASE_PROJECT_ID=family-wealth-8033e
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60">
           <div className="text-[11px] text-slate-500 dark:text-slate-400">
-            {isStandalone ? '✓ Running in standalone app mode' : '✓ Works on all iOS & Android devices'}
+            {isStandalone ? '✅ Running in standalone app mode' : '💡 Works on all iOS & Android devices'}
           </div>
           <button
             onClick={onClose}

@@ -49,7 +49,6 @@ export const IncomeLogView: React.FC<IncomeLogViewProps> = ({
     e.preventDefault();
     const cleanAmount = sanitizeCurrency(amount);
     if (!source || cleanAmount <= 0) return;
-
     const newIncome: IncomeEntry = {
       id: `inc-${Date.now()}`,
       monthYear: filterMonth === 'ALL' ? currentMonth : filterMonth,
@@ -62,7 +61,6 @@ export const IncomeLogView: React.FC<IncomeLogViewProps> = ({
       isRecurring: true,
       notes: notes.trim(),
     };
-
     onAddIncome(newIncome);
     setIsModalOpen(false);
     setSource('');
@@ -74,7 +72,6 @@ export const IncomeLogView: React.FC<IncomeLogViewProps> = ({
     e.preventDefault();
     if (!editingIncome || !onUpdateIncome) return;
     const cleanAmount = sanitizeCurrency(editingIncome.actualAmount);
-
     onUpdateIncome({
       ...editingIncome,
       actualAmount: cleanAmount,
@@ -224,7 +221,7 @@ export const IncomeLogView: React.FC<IncomeLogViewProps> = ({
             <div className="flex items-center justify-between">
               <h3 className="text-base font-bold text-slate-900 dark:text-white">Edit Income Entry</h3>
               <button onClick={() => setEditingIncome(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
             <form onSubmit={handleSaveEdit} className="space-y-3.5">

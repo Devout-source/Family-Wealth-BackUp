@@ -8,7 +8,6 @@ export interface FamilyMember {
   pin: string;
   avatarColor: string;
   avatarInitials: string;
-  monthlyIncome?: number;
 }
 
 export interface LoanRecord {
@@ -156,7 +155,6 @@ export interface FamilyVaultData {
   version: number;
   currency: 'AED';
   updatedAt: string;
-  updatedBy?: string;
   members: FamilyMember[];
   loans: LoanRecord[];
   installments: RepaymentInstallment[];

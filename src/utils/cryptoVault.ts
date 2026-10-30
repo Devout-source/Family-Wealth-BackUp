@@ -27,7 +27,6 @@ async function deriveKey(passphrase: string, salt: Uint8Array): Promise<CryptoKe
     false,
     ['deriveKey']
   );
-
   return crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
@@ -48,19 +47,16 @@ export async function encryptData(plaintext: string, passphrase = DEFAULT_PASSPH
   const key = await deriveKey(passphrase, salt);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encoded = new TextEncoder().encode(plaintext);
-
   const ciphertext = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
     key,
     encoded
   );
-
   const payload = {
     iv: Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join(''),
     data: Array.from(new Uint8Array(ciphertext)).map(b => b.toString(16).padStart(2, '0')).join(''),
     timestamp: new Date().toISOString(),
   };
-
   return JSON.stringify(payload);
 }
 
@@ -69,19 +65,15 @@ export async function decryptData(encryptedJson: string, passphrase = DEFAULT_PA
   const salt = getSalt();
   const key = await deriveKey(passphrase, salt);
   const parsed = JSON.parse(encryptedJson);
-
   const ivMatches = parsed.iv.match(/.{1,2}/g) || [];
   const iv = new Uint8Array(ivMatches.map((b: string) => parseInt(b, 16)));
-
   const dataMatches = parsed.data.match(/.{1,2}/g) || [];
   const cipherBuffer = new Uint8Array(dataMatches.map((b: string) => parseInt(b, 16)));
-
   const decrypted = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv },
     key,
     cipherBuffer
   );
-
   return new TextDecoder().decode(decrypted);
 }
 
@@ -101,7 +93,7 @@ export function getInitialVaultFast(): FamilyVaultData | null {
     if (raw && raw.trim().startsWith('{') && raw.includes('"members"')) {
       return JSON.parse(raw);
     }
-  } catch {
+  } catch (e) {
     // ignore
   }
   return null;
@@ -231,6 +223,5 @@ export async function triggerBiometricAuthentication(): Promise<{ success: boole
       // Proceed to simulated biometric dialog
     }
   }
-
   return { success: true, message: 'Biometric fingerprint/face recognized' };
 }

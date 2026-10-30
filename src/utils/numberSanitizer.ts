@@ -8,7 +8,9 @@ export function sanitizeCurrency(val: unknown): number {
   if (val === null || val === undefined) {
     return 0;
   }
+
   let cleaned: number;
+
   if (typeof val === 'number') {
     cleaned = val;
   } else if (typeof val === 'string') {

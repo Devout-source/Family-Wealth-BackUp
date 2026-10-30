@@ -33,7 +33,6 @@ export function exportLoansCSV(loans: FamilyVaultData['loans']) {
     'Status',
     'Notes',
   ];
-
   const rows = loans.map((l) => [
     l.id,
     `"${l.lender}"`,

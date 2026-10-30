@@ -62,6 +62,7 @@ export const QuickNumbersManagerModal: React.FC<QuickNumbersManagerModalProps> =
 
   const handleApply = (e: React.FormEvent) => {
     e.preventDefault();
+
     const sSalary = sanitizeCurrency(sampathSalary);
     const iSalary = sanitizeCurrency(iroshaSalary);
     const sdSalary = sanitizeCurrency(sadeshSalary);

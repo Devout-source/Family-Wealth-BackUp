@@ -239,6 +239,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onClick={onCloseMobileDrawer}
             className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs transition-opacity"
           />
+
           {/* Slide-out Panel */}
           <div className="relative w-72 max-w-[85vw] h-full bg-white dark:bg-slate-900 shadow-2xl flex flex-col z-10 border-r border-slate-200 dark:border-slate-800 transition-colors">
             {/* Header with Close Button */}
@@ -253,6 +254,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <X className="w-5 h-5" />
               </button>
             </div>
+
             {/* Nav content */}
             <div className="flex-1 overflow-y-auto">
               {navContent}
@@ -328,6 +330,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           </button>
         );
       })}
+
       {/* "More Modules" button */}
       <button
         onClick={onOpenMore}

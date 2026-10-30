@@ -7,6 +7,7 @@ import { GoogleGenAI } from '@google/genai';
 dotenv.config();
 
 export const app = express();
+
 app.use(express.json({ limit: '10mb' }));
 
 // Prevent browser 404 on favicon
@@ -82,9 +83,8 @@ async function callGeminiWithFallback(contents: any, systemInstruction?: string,
     throw new Error('GEMINI_API_KEY_NOT_CONFIGURED');
   }
 
-  const models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'];
+  const models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-1.5-flash'];
   let lastErr: any = null;
-
   for (const model of models) {
     try {
       const response = await ai.models.generateContent({
@@ -96,7 +96,6 @@ async function callGeminiWithFallback(contents: any, systemInstruction?: string,
           temperature: 0.2,
         },
       });
-
       if (response && response.text) {
         return response.text;
       }
@@ -105,7 +104,6 @@ async function callGeminiWithFallback(contents: any, systemInstruction?: string,
       lastErr = err;
     }
   }
-
   throw lastErr || new Error('All Gemini models unavailable');
 }
 
@@ -119,7 +117,9 @@ app.post('/api/ai/monthly-optimization', async (req, res) => {
   const surplus = Math.max(0, totalIncome - (plannedLoans + essentials));
 
   try {
-    const systemPrompt = `You are an elite, certified family wealth advisor and debt restructuring specialist. You analyze family finances denominated strictly in UAE Dirhams (AED). Your client is a 5-member household with personal loans, credit cards, essential living costs, and monthly income. Provide a sharp, encouraging, highly analytical, and mathematically precise financial optimization strategy. Always respect that all figures are in AED. Provide the response in structured JSON matching this schema:
+    const systemPrompt = `You are an elite, certified family wealth advisor and debt restructuring specialist. You analyze family finances denominated strictly in UAE Dirhams (AED). Your client is a 5-member household with personal loans, credit cards, essential living costs, and monthly income.
+Provide a sharp, encouraging, highly analytical, and mathematically precise financial optimization strategy. Always respect that all figures are in AED.
+Provide the response in structured JSON matching this schema:
 {
   "summaryHeadline": "string (punchy, motivational 1-sentence assessment)",
   "freeSurplusAfterObligations": number,
@@ -210,7 +210,8 @@ app.post('/api/ai/simulate-purchase', async (req, res) => {
   const surplus = parseFloat(currentSurplus) || 0;
 
   try {
-    const systemPrompt = `You are a strict, smart family budgeting allocation assistant. The family wants to know if they can afford a specific item/expense without disrupting their loan repayments and essential household needs in UAE Dirhams (AED). Evaluate feasibility, determine safe allocation from available surplus, and suggest an installment or wait plan if needed. Provide your response strictly in JSON matching this schema:
+    const systemPrompt = `You are a strict, smart family budgeting allocation assistant. The family wants to know if they can afford a specific item/expense without disrupting their loan repayments and essential household needs in UAE Dirhams (AED). Evaluate feasibility, determine safe allocation from available surplus, and suggest an installment or wait plan if needed.
+Provide your response strictly in JSON matching this schema:
 {
   "verdict": "Safe to Proceed" | "Caution: Adjust Timeline" | "High Risk: Postpone",
   "verdictColor": "emerald" | "amber" | "crimson",
@@ -285,7 +286,8 @@ app.post('/api/ai/ask', async (req, res) => {
     return res.status(400).json({ success: false, error: 'Question is required' });
   }
 
-  const systemInstruction = `You are the trusted, friendly, and mathematically rigorous AI Family Financial Advisor for a 5-member family (Father: Sampath, Mother: Irosha, Eldest Son: Sadesh, Middle Child: Devout, Youngest Child: Uren). All financial numbers are strictly denominated in UAE Dirhams (AED).
+  const systemInstruction = `You are the trusted, friendly, and mathematically rigorous AI Family Financial Advisor for a 5-member family (Father: Sampath, Mother: Irosha, Eldest Son: Sadesh, Middle Child: Devout, Youngest Child: Uren).
+All financial numbers are strictly denominated in UAE Dirhams (AED).
 
 Current Family Financial Snapshot:
 - Total Monthly Income: AED ${snapshot?.totalIncome || 0}
@@ -316,7 +318,6 @@ Financial Rules & Insights:
       }
     }
   }
-
   contents.push({
     role: 'user',
     parts: [{ text: question }],
@@ -348,7 +349,8 @@ app.post('/api/ai/scan-document', async (req, res) => {
 
     const cleanBase64 = imageBase64.replace(/^data:[a-zA-Z0-9/+-]+;base64,/, '');
 
-    const systemPrompt = `You are an expert optical document parser and accountant for a family financial ledger denominated in UAE Dirhams (AED). Analyze the provided image (which could be a store receipt, utility bill e.g. DEWA, loan agreement, credit card statement, bank SMS screenshot, or expense note). Identify the financial entry type, extract all numerical values in AED, dates, and vendor/lender names. Format the response strictly in JSON adhering to this schema:
+    const systemPrompt = `You are an expert optical document parser and accountant for a family financial ledger denominated in UAE Dirhams (AED). Analyze the provided image (which could be a store receipt, utility bill e.g. DEWA, loan agreement, credit card statement, bank SMS screenshot, or expense note).
+Identify the financial entry type, extract all numerical values in AED, dates, and vendor/lender names. Format the response strictly in JSON adhering to this schema:
 {
   "documentType": "loan" | "essential_bill" | "payment_charge" | "credit_card" | "income" | "other_spending",
   "confidenceScore": number,
@@ -388,7 +390,6 @@ app.post('/api/ai/scan-document', async (req, res) => {
       systemPrompt,
       'application/json'
     );
-
     const parsedData = JSON.parse(text || '{}');
     return res.json({ success: true, data: parsedData });
   } catch (error: any) {

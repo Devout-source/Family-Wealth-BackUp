@@ -97,7 +97,6 @@ export const CreditCardsAndOtherView: React.FC<CreditCardsAndOtherViewProps> = (
     e.preventDefault();
     const cleanAmount = sanitizeCurrency(spendAmount);
     if (!spendDesc.trim() || cleanAmount <= 0) return;
-
     onAddOtherSpending({
       id: `oth-${Date.now()}`,
       monthYear: currentMonth,
@@ -116,7 +115,6 @@ export const CreditCardsAndOtherView: React.FC<CreditCardsAndOtherViewProps> = (
     e.preventDefault();
     if (!editingSpending || !onUpdateOtherSpending) return;
     const cleanAmount = sanitizeCurrency(editingSpending.amount);
-
     onUpdateOtherSpending({
       ...editingSpending,
       description: editingSpending.description.trim(),
@@ -133,7 +131,6 @@ export const CreditCardsAndOtherView: React.FC<CreditCardsAndOtherViewProps> = (
     const cleanApr = sanitizeCurrency(cardApr);
 
     if (!cardName.trim() || !onAddCreditCard) return;
-
     onAddCreditCard({
       id: `cc-${Date.now()}`,
       bank: cardBank.trim(),
@@ -160,7 +157,6 @@ export const CreditCardsAndOtherView: React.FC<CreditCardsAndOtherViewProps> = (
     const totalToRecover = hasInterest
       ? Math.round(cleanPrincipal * (1 + (cleanRate / 100) * 3) * 100) / 100
       : cleanPrincipal;
-
     onAddMoneyLent({
       id: `ml-${Date.now()}`,
       borrower: borrower.trim(),
@@ -189,12 +185,10 @@ export const CreditCardsAndOtherView: React.FC<CreditCardsAndOtherViewProps> = (
     const principal = sanitizeCurrency(editingLent.principal);
     const rate = editingLent.hasInterest ? sanitizeCurrency(editingLent.monthlyRatePct || 0) : 0;
     const repaid = sanitizeCurrency(editingLent.repaidAmount);
-
     const totalToRecover = editingLent.hasInterest
       ? Math.round(principal * (1 + (rate / 100) * 3) * 100) / 100
       : principal;
     const balanceRemaining = Math.max(0, Math.round((totalToRecover - repaid) * 100) / 100);
-
     const updated: MoneyLent = {
       ...editingLent,
       borrower: editingLent.borrower.trim(),
@@ -213,7 +207,6 @@ export const CreditCardsAndOtherView: React.FC<CreditCardsAndOtherViewProps> = (
     e.preventDefault();
     const cleanAmount = sanitizeCurrency(repayAmount);
     if (!repayingLent || cleanAmount <= 0) return;
-
     onRecordLentRepayment(repayingLent.id, cleanAmount);
     setRepayingLent(null);
     setRepayAmount(0);
@@ -983,7 +976,7 @@ export const CreditCardsAndOtherView: React.FC<CreditCardsAndOtherViewProps> = (
                           isSettled ? 'text-emerald-600 dark:text-emerald-400' : 'text-indigo-600 dark:text-indigo-400'
                         }`}
                       >
-                        {isSettled ? 'Repaid' : ml.status}
+                        • {isSettled ? 'Repaid' : ml.status}
                       </span>
                     </td>
                     <td className="py-3 px-4 text-center font-sans">

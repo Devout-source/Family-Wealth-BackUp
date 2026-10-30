@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { Fingerprint, Lock, KeyRound, AlertCircle, Check, X, Moon, Sun } from 'lucide-react';
+import { Lock, KeyRound, AlertCircle, Check, X, Moon, Sun, HelpCircle, ShieldCheck, UserCheck } from 'lucide-react';
 import { FamilyMember } from '../types.ts';
 import { initialFamilyVault } from '../data/initialRecords.ts';
-import { triggerBiometricAuthentication } from '../utils/cryptoVault.ts';
 import { VaultLogo } from './VaultLogo.tsx';
 
 interface VaultLockScreenProps {
@@ -21,21 +20,36 @@ export const VaultLockScreen: React.FC<VaultLockScreenProps> = ({
   onToggleDarkMode,
 }) => {
   const safeMembers = Array.isArray(members) && members.length > 0 ? members : initialFamilyVault.members;
-  const [selectedMember, setSelectedMember] = useState<FamilyMember>(() => safeMembers[0]);
+  const [selectedMemberId, setSelectedMemberId] = useState<string>(() => safeMembers[0]?.id || 'm1');
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [bioSuccess, setBioSuccess] = useState(false);
-  const [isBioModalOpen, setIsBioModalOpen] = useState(false);
-  const [isScanningFingerprint, setIsScanningFingerprint] = useState(false);
 
-  // Change PIN modal state
+  // Normal Change PIN Modal State (when user knows current PIN)
   const [isChangePinOpen, setIsChangePinOpen] = useState(false);
+  const [currentPinInput, setCurrentPinInput] = useState('');
   const [newPinInput, setNewPinInput] = useState('');
   const [confirmPinInput, setConfirmPinInput] = useState('');
   const [changePinError, setChangePinError] = useState<string | null>(null);
   const [changePinSuccess, setChangePinSuccess] = useState(false);
 
-  const activeMemberSafe = selectedMember || safeMembers[0];
+  // Recovery / Master Reset Modal State (when user forgot PIN)
+  const [isRecoveryModalOpen, setIsRecoveryModalOpen] = useState(false);
+  const [recoveryStep, setRecoveryStep] = useState<'authorize' | 'set_new'>('authorize');
+  const [authMethod, setAuthMethod] = useState<'member' | 'master'>('member');
+  const [authorizerMemberId, setAuthorizerMemberId] = useState<string>('');
+  const [authorizerPinInput, setAuthorizerPinInput] = useState('');
+  const [masterPinInput, setMasterPinInput] = useState('');
+  const [authorizedByText, setAuthorizedByText] = useState('');
+  const [recoveryNewPin, setRecoveryNewPin] = useState('');
+  const [recoveryConfirmPin, setRecoveryConfirmPin] = useState('');
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const [recoverySuccess, setRecoverySuccess] = useState(false);
+
+  // Always resolve active member dynamically from latest safeMembers prop to guarantee immediate PIN sync
+  const activeMemberSafe = safeMembers.find((m) => m.id === selectedMemberId) || safeMembers[0];
+
+  // Other members who can authorize recovery for the active member
+  const otherMembers = safeMembers.filter((m) => m.id !== activeMemberSafe.id);
 
   const handleDigit = (digit: string) => {
     if (pin.length < 4) {
@@ -54,56 +68,110 @@ export const VaultLockScreen: React.FC<VaultLockScreenProps> = ({
   };
 
   const verifyPin = (enteredPin: string) => {
+    // Normal account PIN or Master PIN fallback
     if (enteredPin === activeMemberSafe.pin || enteredPin === '1234') {
       onUnlock(activeMemberSafe);
     } else {
-      setError('Incorrect security PIN. Please try again or use 1234.');
+      setError('Incorrect security PIN. Please try again.');
       setPin('');
     }
   };
 
+  // Normal Change PIN handler
   const handleSaveNewPin = (e: React.FormEvent) => {
     e.preventDefault();
+    if (currentPinInput !== activeMemberSafe.pin && currentPinInput !== '1234') {
+      setChangePinError('Current PIN is incorrect. Use "Forgot PIN?" if forgotten.');
+      return;
+    }
     if (newPinInput.length !== 4 || !/^\d{4}$/.test(newPinInput)) {
-      setChangePinError('PIN must be exactly 4 digits.');
+      setChangePinError('New PIN must be exactly 4 digits.');
       return;
     }
     if (newPinInput !== confirmPinInput) {
-      setChangePinError('PINs do not match. Please re-enter.');
+      setChangePinError('New PINs do not match. Please re-enter.');
       return;
     }
     if (onUpdateMemberPin) {
       onUpdateMemberPin(activeMemberSafe.id, newPinInput);
     }
-    setSelectedMember({ ...activeMemberSafe, pin: newPinInput });
     setChangePinSuccess(true);
     setChangePinError(null);
     setTimeout(() => {
       setChangePinSuccess(false);
       setIsChangePinOpen(false);
+      setCurrentPinInput('');
       setNewPinInput('');
       setConfirmPinInput('');
+      setPin('');
+      setError(null);
     }, 1200);
   };
 
-  const handleStartBiometricScan = async () => {
-    setIsBioModalOpen(true);
-    setIsScanningFingerprint(true);
-    setError(null);
-    try {
-      await triggerBiometricAuthentication();
-      setTimeout(() => {
-        setIsScanningFingerprint(false);
-        setBioSuccess(true);
-        setTimeout(() => {
-          setIsBioModalOpen(false);
-          onUnlock(activeMemberSafe);
-        }, 600);
-      }, 1200);
-    } catch {
-      setIsScanningFingerprint(false);
-      setError('Biometric authentication failed. Please enter your 4-digit PIN.');
+  // Open Recovery / Master Reset Modal
+  const handleOpenRecoveryModal = () => {
+    setRecoveryStep('authorize');
+    setAuthMethod('member');
+    setAuthorizerMemberId(otherMembers[0]?.id || '');
+    setAuthorizerPinInput('');
+    setMasterPinInput('');
+    setRecoveryNewPin('');
+    setRecoveryConfirmPin('');
+    setRecoveryError(null);
+    setRecoverySuccess(false);
+    setIsRecoveryModalOpen(true);
+  };
+
+  // Step 1: Verify Authorization (Other Member's PIN or Master PIN)
+  const handleVerifyAuthorization = (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoveryError(null);
+
+    if (authMethod === 'member') {
+      const authorizer = safeMembers.find((m) => m.id === authorizerMemberId);
+      if (!authorizer) {
+        setRecoveryError('Please select a family member to authorize.');
+        return;
+      }
+      if (authorizerPinInput === authorizer.pin || authorizerPinInput === '1234') {
+        setAuthorizedByText(`${authorizer.name} (${authorizer.relationship})`);
+        setRecoveryStep('set_new');
+      } else {
+        setRecoveryError(`Incorrect PIN for ${authorizer.name}. Authorization failed.`);
+      }
+    } else {
+      // Master PIN authentication
+      if (masterPinInput === '1234') {
+        setAuthorizedByText('Master Security PIN');
+        setRecoveryStep('set_new');
+      } else {
+        setRecoveryError('Incorrect Master PIN. Please try again or ask a family member.');
+      }
     }
+  };
+
+  // Step 2: Set New PIN after successful authorization
+  const handleSaveRecoveredPin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (recoveryNewPin.length !== 4 || !/^\d{4}$/.test(recoveryNewPin)) {
+      setRecoveryError('New PIN must be exactly 4 digits.');
+      return;
+    }
+    if (recoveryNewPin !== recoveryConfirmPin) {
+      setRecoveryError('New PINs do not match. Please re-enter.');
+      return;
+    }
+    if (onUpdateMemberPin) {
+      onUpdateMemberPin(activeMemberSafe.id, recoveryNewPin);
+    }
+    setRecoverySuccess(true);
+    setRecoveryError(null);
+    setTimeout(() => {
+      setIsRecoveryModalOpen(false);
+      setRecoverySuccess(false);
+      setPin('');
+      setError(null);
+    }, 1400);
   };
 
   return (
@@ -155,7 +223,7 @@ export const VaultLockScreen: React.FC<VaultLockScreenProps> = ({
                 <button
                   key={m.id}
                   onClick={() => {
-                    setSelectedMember(m);
+                    setSelectedMemberId(m.id);
                     setPin('');
                     setError(null);
                   }}
@@ -182,7 +250,7 @@ export const VaultLockScreen: React.FC<VaultLockScreenProps> = ({
           </div>
         </div>
 
-        {/* Selected Member Details */}
+        {/* Selected Member Details & PIN Actions */}
         <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800/80 rounded-xl p-3 flex items-center justify-between transition-colors">
           <div className="truncate pr-2">
             <div className="flex items-center gap-2">
@@ -194,27 +262,28 @@ export const VaultLockScreen: React.FC<VaultLockScreenProps> = ({
               {activeMemberSafe.relationship} • {activeMemberSafe.role?.toUpperCase()}
             </span>
           </div>
-
           <div className="flex items-center gap-1.5 shrink-0">
             <button
               onClick={() => {
+                setCurrentPinInput('');
                 setNewPinInput('');
                 setConfirmPinInput('');
                 setChangePinError(null);
                 setIsChangePinOpen(true);
               }}
               className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-200/80 hover:bg-slate-300 dark:bg-slate-800/80 dark:hover:bg-slate-700/80 border border-slate-300 dark:border-slate-700/60 rounded-lg transition-colors cursor-pointer"
-              title="Set a custom private PIN"
+              title="Change your PIN if known"
             >
               <KeyRound className="w-3.5 h-3.5 text-amber-500" />
-              <span className="hidden sm:inline">Change</span> PIN
+              <span>Change PIN</span>
             </button>
             <button
-              onClick={handleStartBiometricScan}
-              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-100/80 dark:bg-emerald-950/60 hover:bg-emerald-200 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-800/50 rounded-lg transition-colors cursor-pointer"
+              onClick={handleOpenRecoveryModal}
+              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-amber-700 dark:text-amber-400 bg-amber-100/80 dark:bg-amber-950/60 hover:bg-amber-200 dark:hover:bg-amber-900/60 border border-amber-300 dark:border-amber-800/50 rounded-lg transition-colors cursor-pointer"
+              title="Forgot PIN? Authorize via another member or master PIN"
             >
-              <Fingerprint className="w-3.5 h-3.5" />
-              <span>Touch</span>
+              <HelpCircle className="w-3.5 h-3.5" />
+              <span>Forgot?</span>
             </button>
           </div>
         </div>
@@ -238,16 +307,9 @@ export const VaultLockScreen: React.FC<VaultLockScreenProps> = ({
           </div>
 
           {error && (
-            <div className="flex items-center gap-1.5 justify-center text-xs text-rose-600 dark:text-rose-400 text-center">
+            <div className="flex items-center gap-1.5 justify-center text-xs text-rose-600 dark:text-rose-400 text-center animate-in fade-in duration-200">
               <AlertCircle className="w-3.5 h-3.5 shrink-0" />
               <span>{error}</span>
-            </div>
-          )}
-
-          {bioSuccess && (
-            <div className="flex items-center gap-1.5 justify-center text-xs text-emerald-600 dark:text-emerald-400">
-              <Check className="w-3.5 h-3.5" />
-              <span>Fingerprint verified for {activeMemberSafe.name}!</span>
             </div>
           )}
         </div>
@@ -264,12 +326,12 @@ export const VaultLockScreen: React.FC<VaultLockScreenProps> = ({
             </button>
           ))}
           <button
-            onClick={handleStartBiometricScan}
-            className="h-11 sm:h-12 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 flex flex-col items-center justify-center transition-colors border border-emerald-200 dark:border-emerald-800/50 group cursor-pointer shadow-2xs"
-            title="Unlock with Fingerprint"
+            onClick={handleOpenRecoveryModal}
+            className="h-11 sm:h-12 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/70 dark:hover:bg-slate-800 text-amber-600 dark:text-amber-400 flex flex-col items-center justify-center transition-colors border border-slate-200 dark:border-slate-700/50 cursor-pointer shadow-2xs group"
+            title="Forgot PIN / Member Recovery"
           >
-            <Fingerprint className="w-5 h-5 group-hover:scale-110 transition-transform" />
-            <span className="text-[9px] uppercase tracking-wider font-semibold">Touch</span>
+            <HelpCircle className="w-4 h-4 group-hover:scale-110 transition-transform" />
+            <span className="text-[9px] uppercase tracking-wider font-semibold">Forgot?</span>
           </button>
           <button
             onClick={() => handleDigit('0')}
@@ -285,19 +347,16 @@ export const VaultLockScreen: React.FC<VaultLockScreenProps> = ({
           </button>
         </div>
 
-        {/* Security Assurance Indicator */}
-        <div className="text-center pt-2 border-t border-slate-200 dark:border-slate-800/60 flex flex-col items-center justify-center gap-1 text-[11px] text-slate-500 dark:text-slate-400">
+        {/* Security Assurance Indicator without birth year or touch text */}
+        <div className="text-center pt-3 border-t border-slate-200 dark:border-slate-800/60 flex flex-col items-center justify-center gap-1 text-[11px] text-slate-500 dark:text-slate-400">
           <div className="flex items-center gap-1.5">
             <Lock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-500" />
-            <span>Confidential 4-Digit Security PIN • Pure Privacy</span>
+            <span>Confidential 4-Digit Security PIN • Encrypted Vault</span>
           </div>
-          <span className="text-[10px] text-slate-400 dark:text-slate-500">
-            Birth years removed • Master PIN <strong className="text-emerald-600 dark:text-emerald-400 font-bold">1234</strong> or Touch
-          </span>
         </div>
       </div>
 
-      {/* Change PIN Modal */}
+      {/* Normal Change PIN Modal */}
       {isChangePinOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-xs w-full text-center space-y-4 shadow-2xl relative">
@@ -311,12 +370,27 @@ export const VaultLockScreen: React.FC<VaultLockScreenProps> = ({
               <div className="w-10 h-10 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center mb-2 border border-amber-500/30">
                 <KeyRound className="w-5 h-5" />
               </div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">Set Private PIN</h3>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Change PIN</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Set a secret 4-digit code for <strong className="text-slate-800 dark:text-white">{activeMemberSafe.name}</strong>
+                Update 4-digit code for <strong className="text-slate-800 dark:text-white">{activeMemberSafe.name}</strong>
               </p>
             </div>
             <form onSubmit={handleSaveNewPin} className="space-y-3 text-left">
+              <div>
+                <label className="text-[11px] font-medium text-slate-700 dark:text-slate-300 block mb-1">
+                  Current PIN
+                </label>
+                <input
+                  type="password"
+                  maxLength={4}
+                  pattern="\d{4}"
+                  required
+                  placeholder="••••"
+                  value={currentPinInput}
+                  onChange={(e) => setCurrentPinInput(e.target.value.replace(/\D/g, ''))}
+                  className="w-full text-center tracking-widest text-lg font-mono px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:border-emerald-500 focus:outline-hidden"
+                />
+              </div>
               <div>
                 <label className="text-[11px] font-medium text-slate-700 dark:text-slate-300 block mb-1">
                   New 4-Digit PIN
@@ -334,7 +408,7 @@ export const VaultLockScreen: React.FC<VaultLockScreenProps> = ({
               </div>
               <div>
                 <label className="text-[11px] font-medium text-slate-700 dark:text-slate-300 block mb-1">
-                  Confirm 4-Digit PIN
+                  Confirm New PIN
                 </label>
                 <input
                   type="password"
@@ -347,70 +421,243 @@ export const VaultLockScreen: React.FC<VaultLockScreenProps> = ({
                   className="w-full text-center tracking-widest text-lg font-mono px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:border-emerald-500 focus:outline-hidden"
                 />
               </div>
+
               {changePinError && (
                 <div className="text-[11px] text-rose-600 dark:text-rose-400 flex items-center gap-1 justify-center">
                   <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                   <span>{changePinError}</span>
                 </div>
               )}
+
               {changePinSuccess && (
                 <div className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1 justify-center">
                   <Check className="w-3.5 h-3.5 shrink-0" />
                   <span>PIN successfully updated!</span>
                 </div>
               )}
+
               <button
                 type="submit"
                 className="w-full py-2 px-3 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-xs cursor-pointer"
               >
                 Save Confidential PIN
               </button>
+
+              <div className="text-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsChangePinOpen(false);
+                    handleOpenRecoveryModal();
+                  }}
+                  className="text-[11px] text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+                >
+                  Forgot your current PIN? Use Family Recovery
+                </button>
+              </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Biometric Touch Sensor Modal */}
-      {isBioModalOpen && (
+      {/* Forgot PIN / Family Member & Master Recovery Modal */}
+      {isRecoveryModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-xs w-full text-center space-y-5 shadow-2xl relative">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-sm w-full space-y-4 shadow-2xl relative">
             <button
-              onClick={() => setIsBioModalOpen(false)}
+              onClick={() => setIsRecoveryModalOpen(false)}
               className="absolute top-3 right-3 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
-            <div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">Biometric Fingerprint</h3>
+
+            <div className="text-center">
+              <div className="w-11 h-11 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto mb-2 border border-amber-500/30">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                Reset PIN for {activeMemberSafe.name}
+              </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Scan fingerprint for <strong className="text-emerald-600 dark:text-emerald-400">{activeMemberSafe.name}</strong>
+                {recoveryStep === 'authorize'
+                  ? 'Authorize reset using another family member’s PIN or the Master PIN.'
+                  : `Authorized by ${authorizedByText}! Enter a new PIN below.`}
               </p>
             </div>
-            {/* Interactive Sensor Target */}
-            <div
-              onClick={() => {
-                setIsScanningFingerprint(false);
-                setBioSuccess(true);
-                setTimeout(() => {
-                  setIsBioModalOpen(false);
-                  onUnlock(activeMemberSafe);
-                }, 500);
-              }}
-              className="w-24 h-24 mx-auto rounded-full bg-slate-100 dark:bg-slate-950 border-2 border-emerald-500/60 flex items-center justify-center cursor-pointer relative group transition-transform active:scale-95 shadow-lg shadow-emerald-500/20"
-            >
-              {isScanningFingerprint && (
-                <div className="absolute inset-0 rounded-full border-2 border-emerald-400 animate-ping opacity-60" />
-              )}
-              <Fingerprint className={`w-12 h-12 ${isScanningFingerprint ? 'text-emerald-600 dark:text-emerald-400 animate-pulse' : 'text-emerald-600 dark:text-emerald-500'}`} />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                {isScanningFingerprint ? 'Scanning biometric sensor...' : 'Touch sensor to authenticate'}
-              </p>
-              <p className="text-[10px] text-slate-500 mt-0.5">
-                Account: {activeMemberSafe.relationship} ({activeMemberSafe.name})
-              </p>
-            </div>
+
+            {/* STEP 1: AUTHORIZE RESET */}
+            {recoveryStep === 'authorize' && (
+              <form onSubmit={handleVerifyAuthorization} className="space-y-3.5 text-left">
+                {/* Method selector */}
+                <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMethod('member');
+                      setRecoveryError(null);
+                    }}
+                    className={`py-1.5 text-center rounded-md transition-all cursor-pointer ${
+                      authMethod === 'member'
+                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    Family Member
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMethod('master');
+                      setRecoveryError(null);
+                    }}
+                    className={`py-1.5 text-center rounded-md transition-all cursor-pointer ${
+                      authMethod === 'master'
+                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    Master PIN
+                  </button>
+                </div>
+
+                {authMethod === 'member' ? (
+                  <>
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                        Authorizing Family Member
+                      </label>
+                      <select
+                        value={authorizerMemberId}
+                        onChange={(e) => setAuthorizerMemberId(e.target.value)}
+                        className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:border-emerald-500 focus:outline-hidden"
+                      >
+                        {otherMembers.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name} ({m.relationship})
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-[10px] text-slate-400 mt-0.5 block">
+                        Another member types their secret PIN to authorize changing {activeMemberSafe.name}’s PIN.
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                        {safeMembers.find((m) => m.id === authorizerMemberId)?.name || 'Member'}’s 4-Digit PIN
+                      </label>
+                      <input
+                        type="password"
+                        maxLength={4}
+                        pattern="\d{4}"
+                        required
+                        placeholder="••••"
+                        value={authorizerPinInput}
+                        onChange={(e) => setAuthorizerPinInput(e.target.value.replace(/\D/g, ''))}
+                        className="w-full text-center tracking-widest text-lg font-mono px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:border-emerald-500 focus:outline-hidden"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                      Master Security PIN
+                    </label>
+                    <input
+                      type="password"
+                      maxLength={4}
+                      pattern="\d{4}"
+                      required
+                      placeholder="••••"
+                      value={masterPinInput}
+                      onChange={(e) => setMasterPinInput(e.target.value.replace(/\D/g, ''))}
+                      className="w-full text-center tracking-widest text-lg font-mono px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:border-emerald-500 focus:outline-hidden"
+                    />
+                    <span className="text-[10px] text-slate-400 mt-0.5 block">
+                      Emergency override code for the household vault.
+                    </span>
+                  </div>
+                )}
+
+                {recoveryError && (
+                  <div className="text-[11px] text-rose-600 dark:text-rose-400 flex items-center gap-1.5 justify-center">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{recoveryError}</span>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 px-3 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <UserCheck className="w-4 h-4" />
+                  <span>Verify & Authorize Reset</span>
+                </button>
+              </form>
+            )}
+
+            {/* STEP 2: SET NEW PIN */}
+            {recoveryStep === 'set_new' && (
+              <form onSubmit={handleSaveRecoveredPin} className="space-y-3.5 text-left">
+                <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800/60 rounded-xl flex items-center gap-2 text-xs text-emerald-800 dark:text-emerald-300">
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Authorized by <strong>{authorizedByText}</strong></span>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    New 4-Digit PIN for {activeMemberSafe.name}
+                  </label>
+                  <input
+                    type="password"
+                    maxLength={4}
+                    pattern="\d{4}"
+                    required
+                    placeholder="••••"
+                    value={recoveryNewPin}
+                    onChange={(e) => setRecoveryNewPin(e.target.value.replace(/\D/g, ''))}
+                    className="w-full text-center tracking-widest text-lg font-mono px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:border-emerald-500 focus:outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    Confirm New PIN
+                  </label>
+                  <input
+                    type="password"
+                    maxLength={4}
+                    pattern="\d{4}"
+                    required
+                    placeholder="••••"
+                    value={recoveryConfirmPin}
+                    onChange={(e) => setRecoveryConfirmPin(e.target.value.replace(/\D/g, ''))}
+                    className="w-full text-center tracking-widest text-lg font-mono px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-600 focus:border-emerald-500 focus:outline-hidden"
+                  />
+                </div>
+
+                {recoveryError && (
+                  <div className="text-[11px] text-rose-600 dark:text-rose-400 flex items-center gap-1.5 justify-center">
+                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                    <span>{recoveryError}</span>
+                  </div>
+                )}
+
+                {recoverySuccess && (
+                  <div className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 justify-center">
+                    <Check className="w-4 h-4 shrink-0" />
+                    <span>PIN successfully reset for {activeMemberSafe.name}!</span>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 px-3 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors shadow-xs cursor-pointer"
+                >
+                  Save & Apply New PIN
+                </button>
+              </form>
+            )}
           </div>
         </div>
       )}

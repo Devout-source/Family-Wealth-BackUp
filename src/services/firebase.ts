@@ -18,6 +18,7 @@ import {
   Firestore 
 } from 'firebase/firestore';
 import { FamilyVaultData } from '../types.ts';
+
 import { getAnalytics, isSupported } from 'firebase/analytics';
 
 // Clean support for Vercel/Vite environment variables with resilient fallbacks
@@ -46,6 +47,7 @@ try {
     const isNamedDb = databaseId && databaseId !== '(default)';
     dbInstance = isNamedDb ? getFirestore(app, databaseId) : getFirestore(app);
     authInstance = getAuth(app);
+
     if (typeof window !== 'undefined' && firebaseConfig.measurementId) {
       isSupported().then((supported) => {
         if (supported && app) {
@@ -153,6 +155,7 @@ export async function signInWithGoogleAccount(): Promise<User | null> {
     if (errorCode === 'auth/popup-closed-by-user' || errorCode === 'auth/cancelled-popup-request') {
       return null;
     }
+
     // Google provider not yet enabled in Firebase Console
     if (errorCode === 'auth/configuration-not-found' || errorCode === 'auth/operation-not-allowed') {
       const msg = 'Google Sign-In is not enabled yet in your Firebase Console (project: family-wealth-8033e). Please open Firebase Console -> Build -> Authentication -> Sign-in method, click Google, and enable it.';
@@ -162,6 +165,7 @@ export async function signInWithGoogleAccount(): Promise<User | null> {
       customErr.consoleUrl = 'https://console.firebase.google.com/project/family-wealth-8033e/authentication/providers';
       throw customErr;
     }
+
     // Current host domain not added to Firebase Authorized Domains
     if (errorCode === 'auth/unauthorized-domain') {
       const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'current domain';
@@ -172,6 +176,7 @@ export async function signInWithGoogleAccount(): Promise<User | null> {
       customErr.consoleUrl = 'https://console.firebase.google.com/project/family-wealth-8033e/authentication/settings';
       throw customErr;
     }
+
     console.warn('[Firebase Sign In Warning]:', err?.message || err);
     throw err;
   }
@@ -203,10 +208,11 @@ export function listenToFamilyVault(
   if (!dbInstance || !authInstance?.currentUser) {
     return () => {};
   }
+
   let isUnsubscribed = false;
   const path = `vaults/${docId}`;
   const vaultDocRef = doc(dbInstance, 'vaults', docId);
-
+  
   const unsubscribe = onSnapshot(
     vaultDocRef,
     (snapshot) => {
@@ -215,8 +221,6 @@ export function listenToFamilyVault(
         const rawData = snapshot.data() as FamilyVaultData;
         if (rawData && Array.isArray(rawData.loans) && Array.isArray(rawData.members)) {
           onUpdate(rawData);
-        } else if (onEmpty) {
-          onEmpty();
         }
       } else {
         if (onEmpty) {
@@ -230,9 +234,10 @@ export function listenToFamilyVault(
       if (err.code === 'permission-denied' && (!authInstance || !authInstance.currentUser)) {
         return;
       }
-      handleFirestoreError(err, OperationType.GET, path);
-      if (onError) {
-        onError(err);
+      try {
+        handleFirestoreError(err, OperationType.GET, path);
+      } catch (e: any) {
+        if (onError) onError(e);
       }
     }
   );
@@ -252,6 +257,7 @@ export async function saveVaultToFirestore(vault: FamilyVaultData): Promise<{ su
   if (!authInstance?.currentUser) {
     return { success: false, error: 'Sign in to sync your changes with the cloud.' };
   }
+
   const path = `vaults/${PRIMARY_VAULT_DOC_ID}`;
   try {
     const vaultDocRef = doc(dbInstance, 'vaults', PRIMARY_VAULT_DOC_ID);
@@ -271,6 +277,7 @@ export async function saveVaultToFirestore(vault: FamilyVaultData): Promise<{ su
       moneyLent: vault.moneyLent || [],
       savingsGoals: vault.savingsGoals || [],
     };
+
     await setDoc(vaultDocRef, cleanPayload, { merge: true });
     return { success: true };
   } catch (err: any) {
@@ -284,6 +291,7 @@ export async function fetchVaultOnceFromFirestore(): Promise<FamilyVaultData | n
   if (!dbInstance || !authInstance?.currentUser) {
     return null;
   }
+
   const path = `vaults/${PRIMARY_VAULT_DOC_ID}`;
   try {
     const vaultDocRef = doc(dbInstance, 'vaults', PRIMARY_VAULT_DOC_ID);

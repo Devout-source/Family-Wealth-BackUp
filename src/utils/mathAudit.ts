@@ -64,7 +64,6 @@ export function runMathematicalAudit(vault: FamilyVaultData): AuditIssue[] {
     const actualPaymentsRecorded = vault.payments
       .filter((p) => p.category === 'Loan Repayment' && (p.targetId === loan.id || p.targetName.includes(loan.lender)))
       .reduce((sum, p) => sum + p.amount, 0);
-
     const paymentsDiff = Math.abs(actualPaymentsRecorded - loan.paidSoFar);
     if (paymentsDiff > 0.1) {
       issues.push({
@@ -247,6 +246,7 @@ export function autoReconcileVault(vault: FamilyVaultData): { updatedVault: Fami
         const unpaidInstallments = loanInstallments.filter((inst) => inst.status !== 'Paid');
         const paidSum = loanInstallments.filter((inst) => inst.status === 'Paid').reduce((acc, i) => acc + (i.paidAmount || i.plannedAmount), 0);
         const remainingToDistribute = Math.max(0, loan.totalToRepay - paidSum);
+
         if (unpaidInstallments.length > 0) {
           const perInstallment = Math.round((remainingToDistribute / unpaidInstallments.length) * 100) / 100;
           let distributed = 0;
@@ -351,5 +351,6 @@ export function exportAuditIssuesToCSV(issues: AuditIssue[]): string {
     `"${issue.actualValue}"`,
     issue.autoFixable ? 'YES' : 'NO',
   ]);
+
   return [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
 }

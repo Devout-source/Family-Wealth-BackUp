@@ -91,7 +91,6 @@ export const VaultExportView: React.FC<VaultExportViewProps> = ({
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = async () => {
       try {
@@ -263,6 +262,7 @@ export const VaultExportView: React.FC<VaultExportViewProps> = ({
                 Download .enc File
               </button>
             </div>
+
             {syncCode && (
               <div className="space-y-2 pt-2">
                 <div className="flex items-center justify-between">
@@ -317,6 +317,7 @@ export const VaultExportView: React.FC<VaultExportViewProps> = ({
                 Viewer role active: Admin or Editor permission required to restore vault data.
               </p>
             )}
+
             {importSuccess && (
               <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg text-xs text-emerald-700 dark:text-emerald-300">
                 Data successfully synced and updated across all family modules!
